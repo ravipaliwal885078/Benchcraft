@@ -87,4 +87,34 @@ export const getEmployeeAvailability = async (empId) => {
   return response.data
 }
 
+export const addEmployeeSkill = async (empId, skillData) => {
+  const response = await api.post(`/employees/${empId}/skills`, skillData)
+  return response.data
+}
+
+export const removeEmployeeSkill = async (empId, skillId) => {
+  const response = await api.delete(`/employees/${empId}/skills/${skillId}`)
+  return response.data
+}
+
+export const raiseEmployeeRisk = async (empId, riskData) => {
+  const response = await api.post(`/employees/${empId}/risks`, riskData)
+  return response.data
+}
+
+// HR Report APIs
+export const getAllocationReport = async (forecastDays = 30, includeBench = true) => {
+  const params = new URLSearchParams()
+  params.append('forecast_days', forecastDays)
+  params.append('include_bench', includeBench)
+  const response = await api.get(`/hr/allocation-report?${params}`)
+  return response.data
+}
+
+// Dashboard APIs
+export const getComprehensiveDashboard = async () => {
+  const response = await api.get('/comprehensive')
+  return response.data
+}
+
 export default api

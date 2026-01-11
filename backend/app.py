@@ -14,10 +14,12 @@ CORS(app)
 
 # Register blueprints
 from routes import resources, projects, dashboard, employees, documents, hr, rfp, search, training, risk, monitor
+from routes.employees_skills_risks import bp as employee_skills_risks_bp
 app.register_blueprint(resources.bp, url_prefix='/api/v1')
 app.register_blueprint(projects.bp, url_prefix='/api/v1')
 app.register_blueprint(dashboard.bp, url_prefix='/api/v1')
 app.register_blueprint(employees.bp, url_prefix='/api/v1/employees')
+app.register_blueprint(employee_skills_risks_bp, url_prefix='/api/v1/employees')
 app.register_blueprint(documents.bp, url_prefix='/api/v1/documents')
 app.register_blueprint(hr.bp, url_prefix='/api/v1/hr')
 app.register_blueprint(rfp.bp, url_prefix='/api/v1/rfp')

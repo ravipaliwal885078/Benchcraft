@@ -16,7 +16,10 @@ load_dotenv(Path(__file__).parent / '.env')
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from models import Base, Employee, Project, EmployeeSkill, RoleLevel, EmployeeStatus, ProjectStatus
+from models import (
+    Base, Employee, Project, EmployeeSkill, Allocation, RoleLevel, EmployeeStatus, ProjectStatus,
+    Domain, EmployeeDomain, ProjectDomain, RateCard, PriorityScoring, DomainType, RateType, PriorityTier
+)
 from config import Config
 from tools.vector_db import ChromaSearchTool
 from tools.sql_db import SQLDatabaseTool
@@ -45,6 +48,17 @@ PROJECT_DESCRIPTIONS = [
     "DevOps engineer for CI/CD pipeline automation. Docker, Kubernetes, and infrastructure as code experience needed.",
     "Aviation industry expert for airline management system. Experience with legacy systems and modern cloud architecture.",
     "Healthcare technology specialist for patient management platform. HIPAA compliance and security expertise required."
+]
+
+# Domain data
+DOMAINS = [
+    {"name": "FinTech", "code": "FINTECH", "type": DomainType.BUSINESS_DOMAIN},
+    {"name": "Healthcare", "code": "HEALTHCARE", "type": DomainType.BUSINESS_DOMAIN},
+    {"name": "Retail", "code": "RETAIL", "type": DomainType.BUSINESS_DOMAIN},
+    {"name": "Aviation", "code": "AVIATION", "type": DomainType.INDUSTRY_VERTICAL},
+    {"name": "Cloud Architecture", "code": "CLOUD", "type": DomainType.TECHNICAL_DOMAIN},
+    {"name": "Machine Learning", "code": "ML", "type": DomainType.TECHNICAL_DOMAIN},
+    {"name": "E-commerce", "code": "ECOMMERCE", "type": DomainType.BUSINESS_DOMAIN},
 ]
 
 def generate_bio(role_level, skills_list):
@@ -81,10 +95,21 @@ def seed_database():
         # Create 20 employees
         print("Creating employees...")
         employees = []
+        used_emails = set()  # Track used emails to ensure uniqueness
+        
         for i in range(20):
             first_name = random.choice(FIRST_NAMES)
             last_name = random.choice(LAST_NAMES)
             role_level = random.choice(list(RoleLevel))
+            
+            # Generate unique email
+            base_email = f"{first_name.lower()}.{last_name.lower()}@benchcraft.ai"
+            email = base_email
+            counter = 1
+            while email in used_emails:
+                email = f"{first_name.lower()}.{last_name.lower()}{counter}@benchcraft.ai"
+                counter += 1
+            used_emails.add(email)
             
             # Assign skills (3-7 skills per employee)
             num_skills = random.randint(3, 7)
@@ -106,8 +131,8 @@ def seed_database():
             employee = Employee(
                 first_name=first_name,
                 last_name=last_name,
-                email=f"{first_name.lower()}.{last_name.lower()}@benchcraft.ai",
-                role_level=role_level,
+                email=email,  # Use unique email
+                role_level=role_level.value,  # Store enum value as string
                 ctc_monthly=ctc_monthly,
                 currency="USD",
                 base_location=random.choice(LOCATIONS),
@@ -138,6 +163,22 @@ def seed_database():
             employees.append(employee)
             print(f"  Created employee {i+1}/20: {first_name} {last_name} ({role_level.value})")
         
+        # Create domains
+        print("\nCreating domains...")
+        domains = []
+        for domain_data in DOMAINS:
+            domain = Domain(
+                domain_name=domain_data["name"],
+                domain_code=domain_data["code"],
+                domain_type=domain_data["type"],
+                description=f"{domain_data['name']} domain expertise",
+                is_active=True
+            )
+            session.add(domain)
+            session.flush()
+            domains.append(domain)
+            print(f"  Created domain: {domain_data['name']}")
+        
         # Create 5 projects
         print("\nCreating projects...")
         projects = []
@@ -165,18 +206,181 @@ def seed_database():
             )
             
             session.add(project)
+            session.flush()
             projects.append(project)
             print(f"  Created project {i+1}/5: {client} Platform")
         
+        # Create employee domains (assign 1-3 domains per employee)
+        print("\nCreating employee domains...")
+        for employee in employees:
+            num_domains = random.randint(1, 3)
+            employee_domains_list = random.sample(domains, min(num_domains, len(domains)))
+            
+            for idx, domain in enumerate(employee_domains_list):
+                emp_domain = EmployeeDomain(
+                    emp_id=employee.id,
+                    domain_id=domain.id,
+                    proficiency=random.randint(3, 5),
+                    years_of_experience=random.uniform(1.0, 8.0),
+                    first_exposure_date=date.today() - timedelta(days=random.randint(100, 2000)),
+                    last_used_date=date.today() - timedelta(days=random.randint(0, 180)),
+                    is_primary_domain=(idx == 0)  # First domain is primary
+                )
+                session.add(emp_domain)
+        
+        # Create rate cards for employees
+        print("\nCreating rate cards...")
+        rate_cards_map = {}  # Map employee_id to rate_card_id
+        for employee in employees:
+            # Calculate base hourly rate (typically 2-3x hourly cost for 50% margin)
+            hourly_cost = employee.ctc_monthly / 160.0  # Assuming 160 working hours/month
+            base_rate = hourly_cost * random.uniform(2.0, 3.0)  # 50-66% margin
+            
+            # Create base rate card
+            base_rate_card = RateCard(
+                emp_id=employee.id,
+                domain_id=None,  # Base rate
+                hourly_rate=round(base_rate, 2),
+                currency="USD",
+                effective_date=date.today() - timedelta(days=30),
+                expiry_date=None,
+                rate_type=RateType.BASE,
+                is_active=True
+            )
+            session.add(base_rate_card)
+            session.flush()
+            rate_cards_map[employee.id] = base_rate_card.id
+            
+            # Create 1-2 domain-specific rate cards (higher rates)
+            employee_domains = session.query(EmployeeDomain).filter(EmployeeDomain.emp_id == employee.id).all()
+            if employee_domains:
+                selected_domains = random.sample(employee_domains, min(2, len(employee_domains)))
+                for emp_domain in selected_domains:
+                    domain_rate = base_rate * random.uniform(1.1, 1.5)  # 10-50% premium
+                    domain_rate_card = RateCard(
+                        emp_id=employee.id,
+                        domain_id=emp_domain.domain_id,
+                        hourly_rate=round(domain_rate, 2),
+                        currency="USD",
+                        effective_date=date.today() - timedelta(days=20),
+                        expiry_date=None,
+                        rate_type=RateType.DOMAIN_SPECIFIC,
+                        is_active=True
+                    )
+                    session.add(domain_rate_card)
+        
+        # Create allocations (assign some employees to projects)
+        print("\nCreating allocations...")
+        active_projects = [p for p in projects if p.status == ProjectStatus.ACTIVE]
+        allocated_employees = []
+        
+        for project in active_projects[:3]:  # Allocate to first 3 active projects
+            num_allocations = random.randint(2, 5)
+            available_employees = [e for e in employees if e.id not in allocated_employees]
+            
+            if not available_employees:
+                break
+                
+            selected_employees = random.sample(available_employees, min(num_allocations, len(available_employees)))
+            
+            for employee in selected_employees:
+                # Get employee's rate card
+                rate_card_id = rate_cards_map.get(employee.id)
+                
+                # Calculate allocation dates
+                alloc_start = project.start_date + timedelta(days=random.randint(0, 10))
+                alloc_end = project.end_date - timedelta(days=random.randint(0, 30)) if project.end_date else None
+                
+                # Get rate from rate card
+                rate_card = session.query(RateCard).filter(RateCard.id == rate_card_id).first()
+                billing_rate = rate_card.hourly_rate if rate_card else None
+                
+                allocation = Allocation(
+                    emp_id=employee.id,
+                    proj_id=project.id,
+                    start_date=alloc_start,
+                    end_date=alloc_end,
+                    billing_rate=billing_rate,
+                    is_revealed=random.choice([True, False]),
+                    utilization=random.randint(80, 100),
+                    rate_card_id=rate_card_id
+                )
+                session.add(allocation)
+                
+                # Update employee status
+                employee.status = EmployeeStatus.ALLOCATED
+                allocated_employees.append(employee.id)
+        
+        # Create priority scores for all employees
+        print("\nCreating priority scores...")
+        for employee in employees:
+            # Get base rate card
+            base_rate_card = session.query(RateCard).filter(
+                RateCard.emp_id == employee.id,
+                RateCard.rate_type == RateType.BASE
+            ).first()
+            
+            base_rate_value = base_rate_card.hourly_rate if base_rate_card else 0
+            
+            # Get max domain rate
+            domain_rates = session.query(RateCard).filter(
+                RateCard.emp_id == employee.id,
+                RateCard.rate_type == RateType.DOMAIN_SPECIFIC
+            ).all()
+            max_domain_rate = max([r.hourly_rate for r in domain_rates]) if domain_rates else base_rate_value
+            
+            # Calculate days on bench
+            last_allocation = session.query(Allocation).filter(
+                Allocation.emp_id == employee.id
+            ).order_by(Allocation.end_date.desc()).first()
+            
+            days_on_bench = 0
+            last_allocation_end = None
+            if employee.status == EmployeeStatus.BENCH:
+                if last_allocation and last_allocation.end_date:
+                    days_on_bench = (date.today() - last_allocation.end_date).days
+                    last_allocation_end = last_allocation.end_date
+                else:
+                    days_on_bench = random.randint(1, 60)
+            
+            # Calculate priority score (higher rate + days on bench = higher priority)
+            priority_score = (max_domain_rate * 0.7) + (base_rate_value * 0.3) + (days_on_bench * 0.5)
+            
+            # Determine priority tier
+            if priority_score >= 150:
+                tier = PriorityTier.CRITICAL
+            elif priority_score >= 100:
+                tier = PriorityTier.HIGH
+            elif priority_score >= 50:
+                tier = PriorityTier.MEDIUM
+            else:
+                tier = PriorityTier.LOW
+            
+            priority = PriorityScoring(
+                emp_id=employee.id,
+                priority_score=round(priority_score, 2),
+                base_rate_card_value=round(base_rate_value, 2),
+                max_domain_rate_value=round(max_domain_rate, 2),
+                days_on_bench=days_on_bench,
+                last_allocation_end_date=last_allocation_end,
+                priority_tier=tier
+            )
+            session.add(priority)
+        
         session.commit()
-        print("\n✅ Database seeded successfully!")
+        print("\nSUCCESS: Database seeded successfully!")
         print(f"   - {len(employees)} employees created")
         print(f"   - {len(projects)} projects created")
+        print(f"   - {len(domains)} domains created")
+        print(f"   - Employee domains assigned")
+        print(f"   - Rate cards created")
+        print(f"   - Allocations created")
+        print(f"   - Priority scores calculated")
         print(f"   - ChromaDB embeddings generated")
         
     except Exception as e:
         session.rollback()
-        print(f"\n❌ Error seeding database: {e}")
+        print(f"\nERROR: Error seeding database: {e}")
         raise
     finally:
         session.close()

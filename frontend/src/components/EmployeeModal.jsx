@@ -80,8 +80,13 @@ const EmployeeModal = ({ isOpen, onClose, employee, onSuccess }) => {
       onClose()
     } catch (error) {
       console.error('Failed to save employee:', error)
+      console.error('Error response:', error.response?.data)
       if (error.response?.data?.error) {
-        setErrors({ general: error.response.data.error })
+        const errorMsg = error.response.data.error
+        const traceback = error.response.data.traceback
+        setErrors({ 
+          general: errorMsg + (traceback ? `\n\nDetails: ${traceback.split('\n').slice(0, 3).join('\n')}` : '')
+        })
       } else {
         setErrors({ general: 'Failed to save employee. Please try again.' })
       }

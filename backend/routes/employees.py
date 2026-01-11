@@ -11,6 +11,46 @@ from sqlalchemy import and_, or_
 bp = Blueprint('employees', __name__)
 db_tool = SQLDatabaseTool()
 
+
+def parse_role_level(role_level_str):
+    """
+    Safely parse role_level string to RoleLevel enum.
+    Returns RoleLevel enum member or raises ValueError with helpful message.
+    
+    This function handles both member name access (RoleLevel["JR"]) and
+    value access (RoleLevel("JR")) to ensure compatibility with SQLAlchemy.
+    """
+    if not role_level_str:
+        raise ValueError("role_level is required")
+    
+    # Convert to string, uppercase, and strip whitespace
+    role_level_str = str(role_level_str).upper().strip()
+    
+    # List of valid role level names and values
+    valid_names = [member.name for member in RoleLevel]
+    valid_values = [member.value for member in RoleLevel]
+    
+    # Try to access by member name first (preferred)
+    if role_level_str in valid_names:
+        try:
+            return RoleLevel[role_level_str]
+        except KeyError:
+            pass
+    
+    # Fall back to value access (for SQLAlchemy compatibility)
+    if role_level_str in valid_values:
+        try:
+            return RoleLevel(role_level_str)
+        except ValueError:
+            pass
+    
+    # If neither works, raise error with helpful message
+    valid_options = ', '.join(valid_names)
+    raise ValueError(
+        f"'{role_level_str}' is not a valid RoleLevel. "
+        f"Valid values are: {valid_options}"
+    )
+
 @bp.route('/', methods=['GET'])
 def get_employees():
     """
@@ -28,7 +68,11 @@ def get_employees():
 
         role_level = request.args.get('role_level')
         if role_level:
-            query = query.filter(Employee.role_level == RoleLevel(role_level.upper()))
+            try:
+                role_level_enum = parse_role_level(role_level)
+                query = query.filter(Employee.role_level == role_level_enum.value)  # Compare with string value
+            except ValueError as e:
+                return jsonify({'error': str(e)}), 400
 
         search = request.args.get('search')
         if search:
@@ -41,26 +85,100 @@ def get_employees():
             )
 
         employees = query.all()
+        today = date.today()
 
         result = []
         for emp in employees:
-            result.append({
+            # Get current allocation
+            current_allocation = None
+            try:
+                current_allocation = session.query(Allocation).filter(
+                    and_(
+                        Allocation.emp_id == emp.id,
+                        Allocation.start_date <= today,
+                        or_(
+                            Allocation.end_date.is_(None),
+                            Allocation.end_date >= today
+                        )
+                    )
+                ).first()
+            except Exception:
+                pass
+            
+            # Get current rate card
+            current_rate_card = None
+            hourly_rate = None
+            try:
+                from models import RateCard, RateType
+                # Try to get base rate card
+                base_rate = session.query(RateCard).filter(
+                    and_(
+                        RateCard.emp_id == emp.id,
+                        RateCard.domain_id.is_(None),
+                        RateCard.rate_type == RateType.BASE,
+                        RateCard.is_active == True,
+                        or_(
+                            RateCard.expiry_date.is_(None),
+                            RateCard.expiry_date >= today
+                        )
+                    )
+                ).order_by(RateCard.effective_date.desc()).first()
+                
+                if base_rate:
+                    current_rate_card = base_rate
+                    hourly_rate = base_rate.hourly_rate
+            except Exception:
+                # RateCard table doesn't exist yet
+                pass
+            
+            # Get skills
+            skills = [{
+                'id': skill.id,
+                'skill_name': skill.skill_name,
+                'proficiency': skill.proficiency,
+                'is_verified': skill.is_verified
+            } for skill in emp.skills]
+            
+            # Build employee data
+            emp_data = {
                 'id': emp.id,
                 'uuid': emp.uuid,
                 'first_name': emp.first_name,
                 'last_name': emp.last_name,
                 'email': emp.email,
-                'role_level': emp.role_level.name if emp.role_level else None,
+                'role_level': emp.role_level if emp.role_level else None,  # Already a string from DB
                 'ctc_monthly': emp.ctc_monthly,
+                'currency': emp.currency,
                 'base_location': emp.base_location,
                 'visa_status': emp.visa_status,
                 'remote_pref': emp.remote_pref,
                 'status': emp.status.value if emp.status else None,
                 'joined_date': emp.joined_date.isoformat() if emp.joined_date else None,
                 'bio_summary': emp.bio_summary,
-                'skills_count': len(emp.skills),
-                'allocations_count': len(emp.allocations)
-            })
+                'skills': skills,
+                'skills_count': len(skills),
+                'allocations_count': len(emp.allocations),
+                'current_allocation': None,
+                'current_hourly_rate': hourly_rate
+            }
+            
+            # Add current allocation details if exists
+            if current_allocation:
+                emp_data['current_allocation'] = {
+                    'id': current_allocation.id,
+                    'project_id': current_allocation.proj_id,
+                    'project_name': current_allocation.project.project_name if current_allocation.project else None,
+                    'client_name': current_allocation.project.client_name if current_allocation.project else None,
+                    'start_date': current_allocation.start_date.isoformat() if current_allocation.start_date else None,
+                    'end_date': current_allocation.end_date.isoformat() if current_allocation.end_date else None,
+                    'billing_rate': current_allocation.billing_rate,
+                    'utilization': current_allocation.utilization
+                }
+                # Use allocation billing rate if no rate card
+                if not hourly_rate and current_allocation.billing_rate:
+                    emp_data['current_hourly_rate'] = current_allocation.billing_rate
+            
+            result.append(emp_data)
 
         return jsonify({
             'employees': result,
@@ -136,7 +254,7 @@ def get_employee(emp_id):
                 'first_name': employee.first_name,
                 'last_name': employee.last_name,
                 'email': employee.email,
-                'role_level': employee.role_level.name if employee.role_level else None,
+                'role_level': employee.role_level if employee.role_level else None,  # Already a string from DB
                 'ctc_monthly': employee.ctc_monthly,
                 'currency': employee.currency,
                 'base_location': employee.base_location,
@@ -179,21 +297,52 @@ def create_employee():
         if existing:
             return jsonify({'error': 'Employee with this email already exists'}), 400
 
-        # Create employee
-        employee = Employee(
-            first_name=data['first_name'],
-            last_name=data['last_name'],
-            email=data['email'],
-            role_level=RoleLevel(data['role_level'].upper()),
-            ctc_monthly=data['ctc_monthly'],
-            currency=data.get('currency', 'USD'),
-            base_location=data.get('base_location'),
-            visa_status=data.get('visa_status'),
-            remote_pref=data.get('remote_pref', False),
-            status=EmployeeStatus(data.get('status', 'BENCH').upper()),
-            joined_date=datetime.strptime(data['joined_date'], '%Y-%m-%d').date() if data.get('joined_date') else date.today(),
-            bio_summary=data.get('bio_summary')
-        )
+        # Validate and parse role_level
+        role_level_input = data.get('role_level')
+        print(f"DEBUG create_employee: Received role_level input: '{role_level_input}', type: {type(role_level_input)}")
+        try:
+            role_level_enum = parse_role_level(role_level_input)
+            # Debug: Verify the enum is correct
+            print(f"DEBUG: Parsed role_level: {role_level_enum}, type: {type(role_level_enum)}, name: {role_level_enum.name}, value: {role_level_enum.value}")
+        except (ValueError, KeyError) as e:
+            print(f"DEBUG create_employee: Error parsing role_level: {e}")
+            return jsonify({'error': str(e)}), 400
+
+        # Parse joined_date safely
+        joined_date_value = date.today()
+        if data.get('joined_date'):
+            try:
+                joined_date_value = datetime.strptime(data['joined_date'], '%Y-%m-%d').date()
+            except (ValueError, TypeError) as date_error:
+                print(f"WARNING: Invalid joined_date format '{data.get('joined_date')}', using today's date. Error: {date_error}")
+                joined_date_value = date.today()
+        
+        # Create employee - store enum value as string
+        # Ensure role_level is a plain string, not an enum object
+        role_level_str = str(role_level_enum.value)
+        print(f"DEBUG: role_level_str before Employee creation: '{role_level_str}', type: {type(role_level_str)}")
+        
+        try:
+            employee = Employee(
+                first_name=data['first_name'],
+                last_name=data['last_name'],
+                email=data['email'],
+                role_level=role_level_str,  # Store as plain string
+                ctc_monthly=float(data['ctc_monthly']),
+                currency=data.get('currency', 'USD'),
+                base_location=data.get('base_location'),
+                visa_status=data.get('visa_status'),
+                remote_pref=bool(data.get('remote_pref', False)),
+                status=EmployeeStatus(data.get('status', 'BENCH').upper()),
+                joined_date=joined_date_value,
+                bio_summary=data.get('bio_summary')
+            )
+            print(f"DEBUG: Employee object created with role_level: '{employee.role_level}', type: {type(employee.role_level)}")
+        except Exception as create_error:
+            import traceback
+            print(f"DEBUG: Error creating Employee object: {create_error}")
+            print(traceback.format_exc())
+            raise
 
         session.add(employee)
         session.commit()
@@ -218,9 +367,48 @@ def create_employee():
             'employee_id': employee.id,
             'uuid': employee.uuid
         }), 201
+    except ValueError as e:
+        session.rollback()
+        error_msg = str(e)
+        if 'RoleLevel' in error_msg or 'not a valid' in error_msg.lower():
+            return jsonify({
+                'error': f'Invalid role_level. Valid values are: JR, MID, SR, LEAD, PRINCIPAL',
+                'details': error_msg
+            }), 400
+        return jsonify({'error': error_msg}), 400
+    except KeyError as e:
+        session.rollback()
+        error_msg = str(e)
+        if 'RoleLevel' in error_msg:
+            return jsonify({
+                'error': f'Invalid role_level. Valid values are: JR, MID, SR, LEAD, PRINCIPAL',
+                'details': error_msg
+            }), 400
+        return jsonify({'error': error_msg}), 400
     except Exception as e:
         session.rollback()
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        error_msg = str(e)
+        error_trace = traceback.format_exc()
+        
+        # Check if it's an enum validation error from SQLAlchemy
+        if 'RoleLevel' in error_msg or 'not a valid' in error_msg.lower() or 'is not a valid' in error_msg.lower():
+            return jsonify({
+                'error': f'Invalid role_level value. Valid values are: JR, MID, SR, LEAD, PRINCIPAL',
+                'details': error_msg,
+                'hint': 'This might be a database schema issue. Try reinitializing the database.',
+                'traceback': error_trace
+            }), 400
+        
+        # Log the full error for debugging
+        print(f"ERROR in create_employee: {error_msg}")
+        print(f"TRACEBACK: {error_trace}")
+        
+        return jsonify({
+            'error': error_msg,
+            'traceback': error_trace,
+            'hint': 'Check the backend console for full error details'
+        }), 500
     finally:
         session.close()
 
@@ -246,7 +434,11 @@ def update_employee(emp_id):
         for field in updatable_fields:
             if field in data:
                 if field == 'role_level':
-                    setattr(employee, field, RoleLevel(data[field].upper()))
+                    try:
+                        role_level_enum = parse_role_level(data[field])
+                        setattr(employee, field, str(role_level_enum.value))  # Store enum value as plain string
+                    except ValueError as e:
+                        return jsonify({'error': str(e)}), 400
                 elif field == 'status':
                     setattr(employee, field, EmployeeStatus(data[field].upper()))
                 else:
@@ -423,7 +615,7 @@ def allocate_resource():
                 'first_name': employee.first_name,
                 'last_name': employee.last_name,
                 'email': employee.email,
-                'role_level': employee.role_level.value if employee.role_level else None,
+                'role_level': employee.role_level if employee.role_level else None,  # Already a string from DB
                 'base_location': employee.base_location,
                 'ctc_monthly': employee.ctc_monthly,
                 'status': employee.status.value if employee.status else None
