@@ -7,6 +7,7 @@ from models import Employee, EmployeeSkill, Allocation, Feedback360, BenchLedger
 from tools.sql_db import SQLDatabaseTool
 from datetime import datetime, date
 from sqlalchemy import and_, or_
+from utils.allocation_validator import validate_allocation_percentage
 
 bp = Blueprint('employees', __name__)
 db_tool = SQLDatabaseTool()
@@ -172,7 +173,9 @@ def get_employees():
                     'start_date': current_allocation.start_date.isoformat() if current_allocation.start_date else None,
                     'end_date': current_allocation.end_date.isoformat() if current_allocation.end_date else None,
                     'billing_rate': current_allocation.billing_rate,
-                    'utilization': current_allocation.utilization
+                    'allocation_percentage': current_allocation.allocation_percentage if hasattr(current_allocation, 'allocation_percentage') else (current_allocation.utilization if current_allocation.utilization else 100),
+                    'billable_percentage': current_allocation.billable_percentage if hasattr(current_allocation, 'billable_percentage') else 100,
+                    'utilization': current_allocation.allocation_percentage if hasattr(current_allocation, 'allocation_percentage') else (current_allocation.utilization if current_allocation.utilization else 100)  # Backward compatibility
                 }
                 # Use allocation billing rate if no rate card
                 if not hourly_rate and current_allocation.billing_rate:
@@ -218,6 +221,7 @@ def get_employee(emp_id):
         # Get feedback history
         feedbacks = [{
             'id': fb.id,
+            'project_id': fb.proj_id,
             'project_name': fb.project.project_name if fb.project else 'Unknown',
             'rating': fb.rating,
             'feedback': fb.feedback,
@@ -232,7 +236,9 @@ def get_employee(emp_id):
             'start_date': alloc.start_date.isoformat(),
             'end_date': alloc.end_date.isoformat() if alloc.end_date else None,
             'billing_rate': alloc.billing_rate,
-            'utilization': alloc.utilization
+            'allocation_percentage': alloc.allocation_percentage if hasattr(alloc, 'allocation_percentage') else (alloc.utilization if alloc.utilization else 100),
+            'billable_percentage': alloc.billable_percentage if hasattr(alloc, 'billable_percentage') else 100,
+            'utilization': alloc.allocation_percentage if hasattr(alloc, 'allocation_percentage') else (alloc.utilization if alloc.utilization else 100)  # Backward compatibility
         } for alloc in employee.allocations]
 
         # Get bench history
@@ -525,7 +531,9 @@ def calculate_availability_timeline(employee, session):
             'project_name': alloc.project.project_name if alloc.project else 'Unknown',
             'client_name': alloc.project.client_name if alloc.project else 'Unknown',
             'billing_rate': alloc.billing_rate,
-            'utilization': alloc.utilization
+            'allocation_percentage': alloc.allocation_percentage if hasattr(alloc, 'allocation_percentage') else (alloc.utilization if alloc.utilization else 100),
+            'billable_percentage': alloc.billable_percentage if hasattr(alloc, 'billable_percentage') else 100,
+            'utilization': alloc.allocation_percentage if hasattr(alloc, 'allocation_percentage') else (alloc.utilization if alloc.utilization else 100)  # Backward compatibility
         })
 
     # Add bench periods
@@ -591,12 +599,30 @@ def allocate_resource():
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
         end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date() if end_date_str else None
 
+        # Validate allocation percentage (default to 100% if not provided)
+        allocation_percentage = data.get('allocation_percentage', 100)
+        billable_percentage = data.get('billable_percentage', 100)
+        
+        # Validate total allocation doesn't exceed 100%
+        from utils.allocation_validator import validate_allocation_percentage
+        is_valid, error_msg = validate_allocation_percentage(
+            session,
+            employee.id,
+            allocation_percentage,
+            start_date,
+            end_date
+        )
+        if not is_valid:
+            return jsonify({'error': error_msg}), 400
+
         allocation = Allocation(
             emp_id=employee.id,
             proj_id=project_id,
             start_date=start_date,
             end_date=end_date,
             billing_rate=billing_rate,
+            allocation_percentage=allocation_percentage,
+            billable_percentage=billable_percentage,
             is_revealed=True  # Reveal immediately upon allocation
         )
 
@@ -629,6 +655,150 @@ def allocate_resource():
             }
         })
 
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+@bp.route('/<int:employee_id>/allocation-check', methods=['POST'])
+def check_employee_allocation(employee_id):
+    """
+    Check employee's current allocation state for validation
+    This queries the current DB state to ensure accurate validation.
+    
+    Input: {
+        'allocation_percentage': int,
+        'start_date': 'YYYY-MM-DD',
+        'end_date': 'YYYY-MM-DD' (optional),
+        'exclude_allocation_id': int (optional, for updates)
+    }
+    Output: {
+        'is_valid': bool,
+        'current_total': int,
+        'would_be_total': int,
+        'error_message': str (if invalid),
+        'employee_name': str
+    }
+    """
+    session = db_tool.Session()
+    try:
+        employee = session.query(Employee).filter(Employee.id == employee_id).first()
+        if not employee:
+            return jsonify({'error': 'Employee not found'}), 404
+        
+        data = request.get_json()
+        new_allocation_percentage = int(data.get('allocation_percentage', 100))
+        start_date = datetime.strptime(data['start_date'], '%Y-%m-%d').date()
+        end_date = None
+        if data.get('end_date'):
+            end_date = datetime.strptime(data['end_date'], '%Y-%m-%d').date()
+        exclude_allocation_id = data.get('exclude_allocation_id')
+        
+        # Query current DB state for overlapping allocations
+        query = session.query(Allocation).filter(Allocation.emp_id == employee_id)
+        if exclude_allocation_id:
+            query = query.filter(Allocation.id != exclude_allocation_id)
+        
+        # Find allocations that overlap with the new date range
+        overlapping_allocations = []
+        for alloc in query.all():
+            alloc_start = alloc.start_date
+            alloc_end = alloc.end_date if alloc.end_date else date(2099, 12, 31)
+            new_end = end_date if end_date else date(2099, 12, 31)
+            if alloc_start <= new_end and start_date <= alloc_end:
+                overlapping_allocations.append(alloc)
+        
+        # Calculate current total from DB
+        current_total = 0
+        for alloc in overlapping_allocations:
+            try:
+                alloc_pct = getattr(alloc, 'allocation_percentage', None)
+                if alloc_pct is None:
+                    alloc_pct = getattr(alloc, 'utilization', 100) or 100
+                current_total += alloc_pct
+            except (AttributeError, TypeError):
+                current_total += 100
+        
+        # If allocation percentage is 0%, it doesn't count towards total (always valid)
+        if new_allocation_percentage == 0:
+            would_be_total = current_total  # 0% doesn't add to total
+            is_valid = True
+            error_msg = None
+        else:
+            would_be_total = current_total + new_allocation_percentage
+            
+            # Use the validation function to check (which also queries DB)
+            is_valid, error_msg = validate_allocation_percentage(
+                session,
+                employee_id,
+                new_allocation_percentage,
+                start_date,
+                end_date,
+                exclude_allocation_id
+            )
+        
+        return jsonify({
+            'is_valid': is_valid,
+            'current_total': current_total,
+            'would_be_total': would_be_total,
+            'error_message': error_msg if not is_valid else None,
+            'employee_name': f"{employee.first_name} {employee.last_name}"
+        })
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+@bp.route('/<int:employee_id>/feedback', methods=['POST'])
+def create_employee_feedback(employee_id):
+    """Create performance feedback for an employee"""
+    session = db_tool.Session()
+    try:
+        employee = session.query(Employee).filter(Employee.id == employee_id).first()
+        if not employee:
+            return jsonify({'error': 'Employee not found'}), 404
+        
+        data = request.get_json()
+        proj_id = data.get('project_id')
+        rating = data.get('rating')
+        feedback = data.get('feedback')
+        tags = data.get('tags', '')
+        
+        if not proj_id or not rating or not feedback:
+            return jsonify({'error': 'project_id, rating, and feedback are required'}), 400
+        
+        if not (1 <= rating <= 5):
+            return jsonify({'error': 'Rating must be between 1 and 5'}), 400
+        
+        # Verify project exists
+        from models import Project
+        project = session.query(Project).filter(Project.id == proj_id).first()
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+        
+        # Create feedback
+        feedback_obj = Feedback360(
+            emp_id=employee_id,
+            proj_id=proj_id,
+            rating=rating,
+            feedback=feedback,
+            tags=tags
+        )
+        session.add(feedback_obj)
+        session.commit()
+        
+        return jsonify({
+            'message': 'Feedback created successfully',
+            'feedback': {
+                'id': feedback_obj.id,
+                'project_name': project.project_name,
+                'rating': feedback_obj.rating,
+                'feedback': feedback_obj.feedback,
+                'tags': feedback_obj.tags
+            }
+        }), 201
     except Exception as e:
         session.rollback()
         return jsonify({'error': str(e)}), 500

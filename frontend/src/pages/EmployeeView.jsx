@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getEmployee, getEmployeeAvailability } from '../services/api'
+import { getEmployee, getEmployeeAvailability, createEmployeeFeedback, getProjects } from '../services/api'
 import {
   User, MapPin, Calendar, DollarSign, Briefcase, Star,
-  TrendingUp, Clock, Award, MessageSquare, Target, Users
+  TrendingUp, Clock, Award, MessageSquare, Target, Users, X, Plus
 } from 'lucide-react'
 
 const EmployeeView = () => {
@@ -12,10 +12,28 @@ const EmployeeView = () => {
   const [availability, setAvailability] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('overview')
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false)
+  const [availableProjects, setAvailableProjects] = useState([])
+  const [feedbackForm, setFeedbackForm] = useState({
+    project_id: '',
+    rating: 5,
+    feedback: '',
+    tags: ''
+  })
 
   useEffect(() => {
     loadEmployeeData()
+    loadProjects()
   }, [id])
+
+  const loadProjects = async () => {
+    try {
+      const data = await getProjects()
+      setAvailableProjects(data.projects || [])
+    } catch (error) {
+      console.error('Failed to load projects:', error)
+    }
+  }
 
   const loadEmployeeData = async () => {
     try {
@@ -29,6 +47,25 @@ const EmployeeView = () => {
       console.error('Failed to load employee data:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleFeedbackSubmit = async (e) => {
+    e.preventDefault()
+    try {
+      await createEmployeeFeedback(id, feedbackForm)
+      alert('Feedback submitted successfully!')
+      setShowFeedbackModal(false)
+      setFeedbackForm({
+        project_id: '',
+        rating: 5,
+        feedback: '',
+        tags: ''
+      })
+      loadEmployeeData() // Reload to show new feedback
+    } catch (error) {
+      console.error('Failed to submit feedback:', error)
+      alert('Failed to submit feedback: ' + (error.response?.data?.error || error.message))
     }
   }
 
@@ -125,12 +162,25 @@ const EmployeeView = () => {
         <div className="bg-green-50 border border-green-200 rounded-lg p-4">
           <div className="flex items-center">
             <Target className="w-5 h-5 text-green-600 mr-3" />
-            <div>
+            <div className="flex-1">
               <h3 className="font-semibold text-green-800">Currently Allocated</h3>
               <p className="text-green-700">
                 {currentAlloc.project_name} • Started {formatDate(currentAlloc.start_date)}
                 {currentAlloc.billing_rate && ` • $${currentAlloc.billing_rate}/hr`}
               </p>
+              <div className="flex items-center space-x-4 mt-2 text-sm">
+                <span className="text-green-700">
+                  📊 Allocation: {currentAlloc.allocation_percentage || currentAlloc.utilization || 100}%
+                </span>
+                <span className="text-green-700">
+                  💰 Billable: {currentAlloc.billable_percentage || 100}%
+                </span>
+                {(currentAlloc.allocation_percentage || currentAlloc.utilization || 100) !== (currentAlloc.billable_percentage || 100) && (
+                  <span className="text-orange-600 font-medium">
+                    ⚠️ Partial billing
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -267,7 +317,7 @@ const EmployeeView = () => {
                       </div>
                       <p className="text-sm text-gray-600 mt-1">
                         {period.type === 'allocated'
-                          ? `${period.client_name} • ${period.utilization}% utilization`
+                          ? `${period.client_name} • ${period.allocation_percentage || period.utilization || 100}% allocated${period.billable_percentage && period.billable_percentage !== 100 ? ` • ${period.billable_percentage}% billable` : ''}`
                           : period.reason || 'Unspecified reason'
                         }
                       </p>
@@ -305,11 +355,21 @@ const EmployeeView = () => {
                       </span>
                     </div>
                     <p className="text-sm text-gray-600 mb-2">{alloc.client_name}</p>
-                    <div className="flex items-center space-x-4 text-sm">
+                    <div className="flex items-center space-x-4 text-sm flex-wrap gap-2">
                       {alloc.billing_rate && (
                         <span className="text-green-600">💰 ${alloc.billing_rate}/hr</span>
                       )}
-                      <span className="text-blue-600">📊 {alloc.utilization}% utilization</span>
+                      <span className="text-blue-600">
+                        📊 Allocation: {alloc.allocation_percentage || alloc.utilization || 100}%
+                      </span>
+                      <span className="text-purple-600">
+                        💰 Billable: {alloc.billable_percentage || 100}%
+                      </span>
+                      {(alloc.allocation_percentage || alloc.utilization || 100) !== (alloc.billable_percentage || 100) && (
+                        <span className="text-orange-600 text-xs">
+                          ⚠️ Partial billing
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -323,7 +383,16 @@ const EmployeeView = () => {
           {/* Performance Feedback Tab */}
           {activeTab === 'feedback' && (
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Performance Feedback</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Performance Feedback</h3>
+                <button
+                  onClick={() => setShowFeedbackModal(true)}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 flex items-center space-x-2 text-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add Feedback</span>
+                </button>
+              </div>
               <div className="space-y-4">
                 {employee.feedbacks.map((feedback) => (
                   <div key={feedback.id} className="bg-gray-50 rounded-lg p-4">
@@ -366,6 +435,127 @@ const EmployeeView = () => {
           )}
         </div>
       </div>
+
+      {/* Feedback Modal */}
+      {showFeedbackModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-900">Performance Feedback - Employee</h2>
+              <button
+                onClick={() => {
+                  setShowFeedbackModal(false)
+                  setFeedbackForm({
+                    project_id: '',
+                    rating: 5,
+                    feedback: '',
+                    tags: ''
+                  })
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleFeedbackSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Project *
+                </label>
+                <select
+                  required
+                  value={feedbackForm.project_id}
+                  onChange={(e) => setFeedbackForm({ ...feedbackForm, project_id: parseInt(e.target.value) })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                >
+                  <option value="">Select Project</option>
+                  {availableProjects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.project_name} - {project.client_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Rating (1-5) *
+                </label>
+                <div className="flex items-center space-x-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setFeedbackForm({ ...feedbackForm, rating: star })}
+                      className="focus:outline-none"
+                    >
+                      <Star
+                        className={`w-8 h-8 ${
+                          star <= feedbackForm.rating
+                            ? 'text-yellow-400 fill-current'
+                            : 'text-gray-300'
+                        }`}
+                      />
+                    </button>
+                  ))}
+                  <span className="ml-2 text-sm text-gray-600">{feedbackForm.rating}/5</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Feedback *
+                </label>
+                <textarea
+                  required
+                  value={feedbackForm.feedback}
+                  onChange={(e) => setFeedbackForm({ ...feedbackForm, feedback: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 h-32"
+                  placeholder="Enter your feedback..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Tags (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  value={feedbackForm.tags}
+                  onChange={(e) => setFeedbackForm({ ...feedbackForm, tags: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  placeholder="e.g., Delivery, Innovation, Communication"
+                />
+              </div>
+
+              <div className="flex space-x-3 pt-4">
+                <button
+                  type="submit"
+                  className="bg-indigo-600 text-white px-6 py-2 rounded-md hover:bg-indigo-700"
+                >
+                  Submit Feedback
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowFeedbackModal(false)
+                    setFeedbackForm({
+                      project_id: '',
+                      rating: 5,
+                      feedback: '',
+                      tags: ''
+                    })
+                  }}
+                  className="border border-gray-300 text-gray-700 px-6 py-2 rounded-md hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

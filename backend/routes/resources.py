@@ -106,6 +106,22 @@ def allocate_resource():
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
         end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date() if end_date_str else None
         
+        # Validate allocation percentage (default to 100% if not provided)
+        allocation_percentage = data.get('allocation_percentage', 100)
+        billable_percentage = data.get('billable_percentage', 100)
+        
+        # Validate total allocation doesn't exceed 100%
+        from utils.allocation_validator import validate_allocation_percentage
+        is_valid, error_msg = validate_allocation_percentage(
+            session,
+            employee.id,
+            allocation_percentage,
+            start_date,
+            end_date
+        )
+        if not is_valid:
+            return jsonify({'error': error_msg}), 400
+        
         from models import Allocation
         allocation = Allocation(
             emp_id=employee.id,
@@ -113,6 +129,8 @@ def allocate_resource():
             start_date=start_date,
             end_date=end_date,
             billing_rate=billing_rate,
+            allocation_percentage=allocation_percentage,
+            billable_percentage=billable_percentage,
             is_revealed=True  # Reveal immediately upon allocation
         )
         session.add(allocation)

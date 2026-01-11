@@ -42,6 +42,26 @@ export const createProject = async (projectData) => {
   return response.data
 }
 
+export const updateProject = async (projectId, projectData) => {
+  const response = await api.put(`/projects/${projectId}`, projectData)
+  return response.data
+}
+
+export const updateProjectTeam = async (projectId, allocations) => {
+  const response = await api.post(`/projects/${projectId}/team`, { allocations })
+  return response.data
+}
+
+export const removeTeamMember = async (projectId, allocationId) => {
+  const response = await api.delete(`/projects/${projectId}/team/${allocationId}`)
+  return response.data
+}
+
+export const checkEmployeeAllocation = async (employeeId, allocationData) => {
+  const response = await api.post(`/employees/${employeeId}/allocation-check`, allocationData)
+  return response.data
+}
+
 export const getKPI = async () => {
   const response = await api.get('/kpi')
   return response.data
@@ -114,6 +134,25 @@ export const getAllocationReport = async (forecastDays = 30, includeBench = true
 // Dashboard APIs
 export const getComprehensiveDashboard = async () => {
   const response = await api.get('/comprehensive')
+  return response.data
+}
+
+export const chatWithAgent = async (question, conversationHistory = [], useWebSearch = false) => {
+  const response = await api.post('/chat', { 
+    question, 
+    conversation_history: conversationHistory,
+    use_web_search: useWebSearch 
+  })
+  return response.data
+}
+
+export const createProjectFeedback = async (projectId, feedbackData) => {
+  const response = await api.post(`/projects/${projectId}/feedback`, feedbackData)
+  return response.data
+}
+
+export const createEmployeeFeedback = async (employeeId, feedbackData) => {
+  const response = await api.post(`/employees/${employeeId}/feedback`, feedbackData)
   return response.data
 }
 

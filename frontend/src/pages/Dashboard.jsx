@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getComprehensiveDashboard } from '../services/api'
+import ChatAgent from '../components/ChatAgent'
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ComposedChart, Area, AreaChart
@@ -468,6 +469,9 @@ const Dashboard = () => {
             </div>
           ))}
         </div>
+
+        {/* Chat Agent */}
+        <ChatAgent />
       </div>
     </div>
   )

@@ -1,7 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import Market from './pages/Market'
-import Canvas from './pages/Canvas'
 import TalentLab from './pages/TalentLab'
 import Pipeline from './pages/Pipeline'
 import EmployeeList from './pages/EmployeeList'
@@ -32,8 +31,8 @@ function Navigation() {
 
   return (
     <nav className="bg-white shadow-sm border-b">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-start h-16">
           <div className="flex">
             <div className="flex-shrink-0 flex items-center">
               <h1 className="text-xl font-bold text-indigo-600">BenchCraft AI</h1>
@@ -49,13 +48,7 @@ function Navigation() {
                 to="/market"
                 className={getLinkClassName('/market')}
               >
-                Marketplace
-              </Link>
-              <Link
-                to="/canvas"
-                className={getLinkClassName('/canvas')}
-              >
-                Canvas
+                Talent Search
               </Link>
               <Link
                 to="/talent-lab"
@@ -103,11 +96,10 @@ function App() {
         <Navigation />
 
         {/* Main Content */}
-        <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        <main className="w-full py-6 px-4 sm:px-6 lg:px-8">
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/market" element={<Market />} />
-            <Route path="/canvas" element={<Canvas />} />
             <Route path="/talent-lab" element={<TalentLab />} />
             <Route path="/pipeline" element={<Pipeline />} />
             <Route path="/employees" element={<Employees />} />

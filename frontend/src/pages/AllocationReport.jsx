@@ -182,6 +182,12 @@ const AllocationReport = () => {
         <div className="text-right">
           <p className="text-sm text-gray-500">Report Date: {new Date(reportData.report_date).toLocaleDateString()}</p>
           <p className="text-sm text-gray-500">Forecast Period: {reportData.forecast_days} days</p>
+          <button
+            onClick={loadReport}
+            className="mt-2 px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm"
+          >
+            Refresh Report
+          </button>
         </div>
       </div>
 
@@ -272,6 +278,9 @@ const AllocationReport = () => {
                   Current Project
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Allocation %
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Alignment Period
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -325,14 +334,47 @@ const AllocationReport = () => {
                             {employee.current_project.client_name}
                           </div>
                         )}
-                        {employee.current_project.utilization_percentage && (
-                          <div className="text-xs text-gray-400">
-                            {employee.current_project.utilization_percentage}% utilization
-                          </div>
-                        )}
                       </div>
                     ) : (
                       <span className="text-sm text-gray-400">Not allocated</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {employee.current_project?.allocation_percentage || employee.current_project?.utilization_percentage ? (
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">
+                          {employee.current_project.allocation_percentage || employee.current_project.utilization_percentage || 100}%
+                        </div>
+                        {employee.current_project.billable_percentage && (
+                          <div className="text-xs text-gray-500">
+                            Billable: {employee.current_project.billable_percentage}%
+                          </div>
+                        )}
+                        {(employee.current_project.allocation_percentage || employee.current_project.utilization_percentage || 100) !== (employee.current_project.billable_percentage || 100) && (
+                          <div className="text-xs text-orange-600 mt-1">⚠️ Partial</div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-gray-400">N/A</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {employee.current_project?.allocation_percentage || employee.current_project?.utilization_percentage ? (
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">
+                          {employee.current_project.allocation_percentage || employee.current_project.utilization_percentage || 100}%
+                        </div>
+                        {employee.current_project.billable_percentage && (
+                          <div className="text-xs text-gray-500">
+                            Billable: {employee.current_project.billable_percentage}%
+                          </div>
+                        )}
+                        {(employee.current_project.allocation_percentage || employee.current_project.utilization_percentage || 100) !== (employee.current_project.billable_percentage || 100) && (
+                          <div className="text-xs text-orange-600 mt-1">⚠️ Partial</div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-gray-400">N/A</span>
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">

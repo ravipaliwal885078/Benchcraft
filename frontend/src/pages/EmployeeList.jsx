@@ -278,10 +278,20 @@ const EmployeeList = () => {
                       ` - ${new Date(employee.current_allocation.end_date).toLocaleDateString()}`}
                   </span>
                 </div>
-                {employee.current_allocation.utilization && (
-                  <p className="text-xs text-gray-600 mt-1">
-                    Utilization: {employee.current_allocation.utilization}%
-                  </p>
+                {(employee.current_allocation.allocation_percentage || employee.current_allocation.utilization) && (
+                  <div className="text-xs text-gray-600 mt-1 space-y-1">
+                    <p>
+                      Allocation: {employee.current_allocation.allocation_percentage || employee.current_allocation.utilization || 100}%
+                    </p>
+                    {employee.current_allocation.billable_percentage && (
+                      <p>
+                        Billable: {employee.current_allocation.billable_percentage}%
+                      </p>
+                    )}
+                    {(employee.current_allocation.allocation_percentage || employee.current_allocation.utilization || 100) !== (employee.current_allocation.billable_percentage || 100) && (
+                      <p className="text-orange-600">⚠️ Partial billing</p>
+                    )}
+                  </div>
                 )}
               </div>
             ) : (

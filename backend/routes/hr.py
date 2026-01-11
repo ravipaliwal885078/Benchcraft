@@ -109,6 +109,32 @@ def calculate_gross_margin(billing_rate, cost_rate):
     return 0.0
 
 
+def _get_allocation_percentage(allocation):
+    """Helper to safely get allocation_percentage from allocation"""
+    if not allocation:
+        return None
+    try:
+        # Try to get allocation_percentage directly
+        if hasattr(allocation, 'allocation_percentage') and allocation.allocation_percentage is not None:
+            return allocation.allocation_percentage
+        # Fallback to utilization
+        if hasattr(allocation, 'utilization') and allocation.utilization is not None:
+            return allocation.utilization
+        return 100  # Default
+    except (AttributeError, TypeError):
+        return 100  # Default
+
+def _get_billable_percentage(allocation):
+    """Helper to safely get billable_percentage from allocation"""
+    if not allocation:
+        return None
+    try:
+        if hasattr(allocation, 'billable_percentage') and allocation.billable_percentage is not None:
+            return allocation.billable_percentage
+        return 100  # Default
+    except (AttributeError, TypeError):
+        return 100  # Default
+
 def get_current_rate_card(employee, project_domain_id=None, session=None):
     """Get the most appropriate rate card for an employee"""
     if not session:
@@ -437,7 +463,9 @@ def get_allocation_report():
                         'start_date': alignment_start.isoformat() if alignment_start else None,
                         'end_date': alignment_end.isoformat() if alignment_end else None,
                         'alignment_period_days': alignment_days,
-                        'utilization_percentage': current_allocation.utilization if current_allocation else None
+                        'allocation_percentage': _get_allocation_percentage(current_allocation),
+                        'billable_percentage': _get_billable_percentage(current_allocation),
+                        'utilization_percentage': _get_allocation_percentage(current_allocation)  # Backward compatibility
                     },
                     
                     # Financial Metrics

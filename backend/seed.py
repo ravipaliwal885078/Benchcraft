@@ -295,6 +295,16 @@ def seed_database():
                 rate_card = session.query(RateCard).filter(RateCard.id == rate_card_id).first()
                 billing_rate = rate_card.hourly_rate if rate_card else None
                 
+                # Create allocation with allocation_percentage and billable_percentage
+                # Most allocations are 100% allocation and 100% billable
+                # Some scenarios: partial allocation, or allocation > billable (replacement scenario)
+                allocation_pct = random.choice([50, 80, 100, 100, 100])  # Bias towards 100%
+                billable_pct = random.choice([50, 80, 100, 100, 100])  # Bias towards 100%
+                
+                # Special case: if allocation is 100% but billable is 50%, simulate replacement scenario
+                if allocation_pct == 100 and random.random() < 0.1:  # 10% chance
+                    billable_pct = 50
+                
                 allocation = Allocation(
                     emp_id=employee.id,
                     proj_id=project.id,
@@ -302,7 +312,8 @@ def seed_database():
                     end_date=alloc_end,
                     billing_rate=billing_rate,
                     is_revealed=random.choice([True, False]),
-                    utilization=random.randint(80, 100),
+                    allocation_percentage=allocation_pct,
+                    billable_percentage=billable_pct,
                     rate_card_id=rate_card_id
                 )
                 session.add(allocation)

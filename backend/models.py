@@ -31,7 +31,15 @@ class EmployeeStatus(enum.Enum):
 class ProjectStatus(enum.Enum):
     PIPELINE = "PIPELINE"
     ACTIVE = "ACTIVE"
+    ON_HOLD = "ON_HOLD"
     CLOSED = "CLOSED"
+    CANCELLED = "CANCELLED"
+
+
+class ProjectType(enum.Enum):
+    FIXED_PRICE = "Fixed_Price"
+    T_AND_M = "T&M"
+    RETAINER = "Retainer"
 
 
 class DomainType(enum.Enum):
@@ -133,10 +141,14 @@ class Project(Base):
     __tablename__ = 'projects'
     
     id = Column(Integer, primary_key=True)
+    project_code = Column(String, unique=True)  # Auto-generated: PROJ-<Year>-<PrimaryKey>
     client_name = Column(String, nullable=False)
     project_name = Column(String, nullable=False)
     description = Column(Text, nullable=False)  # Vector Source - JD/Scope
     budget_cap = Column(Float, nullable=False)
+    billing_currency = Column(String, default='USD')  # INR, USD, EUR
+    project_type = Column(Enum(ProjectType))  # Fixed_Price, T&M, Retainer
+    industry_domain = Column(String)  # FinTech, Healthcare, Retail, Manufacturing, Telecom, Education, Other
     start_date = Column(Date)
     end_date = Column(Date)
     status = Column(Enum(ProjectStatus), default=ProjectStatus.PIPELINE)
@@ -148,22 +160,49 @@ class Project(Base):
     feedbacks = relationship("Feedback360", back_populates="project", cascade="all, delete-orphan")
     domains = relationship("ProjectDomain", back_populates="project", cascade="all, delete-orphan")
     rate_requirements = relationship("ProjectRateRequirements", back_populates="project", cascade="all, delete-orphan")
+    role_requirements = relationship("ProjectRoleRequirements", back_populates="project", cascade="all, delete-orphan")
     risks = relationship("RiskRegister", back_populates="project", cascade="all, delete-orphan")
 
 
 class Allocation(Base):
-    """The Ledger - Links Employees to Projects"""
+    """
+    The Ledger - Links Employees to Projects
+    
+    Supports multiple simultaneous allocations per employee.
+    
+    Key Concepts:
+    - allocation_percentage: How much of employee's total time is allocated to this project (0-100%)
+      - Sum across all active allocations should ideally be 100% (fully utilized)
+      - Can be < 100% if underutilized, or > 100% if overallocated
+    - billable_percentage: How much of the allocation is billable to the client (0-100%)
+      - Can be different from allocation_percentage
+      - Example: Employee allocated 100% but only 50% billable (during resignation/replacement)
+      - Example: Employee allocated 50% and 100% billable (full billing on partial allocation)
+    
+    Scenarios:
+    1. Multiple projects: Roopak on Novartis (50% alloc, 100% billable) + PwC (40% alloc, 100% billable) = 90% utilized
+    2. Single project: Roopak on Novartis (100% alloc, 100% billable) = fully utilized
+    3. Partial billing: Roopak on Novartis (50% alloc, 50% billable) + PwC (50% alloc, 50% billable)
+    4. Replacement scenario: Roopak on Novartis (100% alloc, 50% billable) - during resignation
+    """
     __tablename__ = 'allocations'
     
     id = Column(Integer, primary_key=True)
     emp_id = Column(Integer, ForeignKey('employees.id'), nullable=False)
     proj_id = Column(Integer, ForeignKey('projects.id'), nullable=False)
     start_date = Column(Date, nullable=False)
-    end_date = Column(Date)
-    billing_rate = Column(Float)
-    is_revealed = Column(Boolean, default=False)  # Fairness Flag
-    utilization = Column(Integer, default=100)  # Percentage
-    rate_card_id = Column(Integer, ForeignKey('rate_cards.id'), nullable=True)  # Link to rate card used (nullable for backward compatibility)
+    end_date = Column(Date)  # Null means ongoing allocation
+    billing_rate = Column(Float)  # Hourly rate charged to client
+    is_revealed = Column(Boolean, default=False)  # Fairness Flag - whether employee knows their rate
+    
+    # Allocation and Billable Percentages
+    allocation_percentage = Column(Integer, nullable=False, default=100)  # How much of employee's time allocated (0-100%)
+    billable_percentage = Column(Integer, nullable=False, default=100)  # How much of allocation is billable (0-100%)
+    
+    # Legacy field for backward compatibility (deprecated - use allocation_percentage)
+    utilization = Column(Integer)  # Deprecated: Use allocation_percentage instead
+    
+    rate_card_id = Column(Integer, ForeignKey('rate_cards.id'), nullable=True)  # Link to rate card used
     
     # Relationships
     employee = relationship("Employee", back_populates="allocations")
@@ -327,7 +366,22 @@ class FinancialMetrics(Base):
 
 
 class AllocationFinancial(Base):
-    """Financial Details per Allocation"""
+    """
+    Financial Details per Allocation
+    
+    Revenue Calculation:
+    - Revenue = billing_rate × billed_hours
+    - billed_hours = (total_hours × allocation_percentage × billable_percentage) / 10000
+    - Example: 160 hours/month, 50% allocation, 100% billable = 80 billable hours
+    
+    Cost Calculation:
+    - Cost = cost_rate × utilized_hours
+    - utilized_hours = (total_hours × allocation_percentage) / 100
+    - Example: 160 hours/month, 50% allocation = 80 utilized hours
+    
+    Gross Margin:
+    - gross_margin = (revenue - cost) / revenue × 100
+    """
     __tablename__ = 'allocation_financials'
     
     id = Column(Integer, primary_key=True)
@@ -336,12 +390,20 @@ class AllocationFinancial(Base):
     billing_rate = Column(Float, nullable=False)  # Actual rate charged to client
     cost_rate = Column(Float)  # Employee cost per hour (CTC/working_hours)
     gross_margin_percentage = Column(Float)  # Calculated margin for this allocation
-    estimated_revenue = Column(Float, default=0.0)
-    actual_revenue = Column(Float, default=0.0)
-    estimated_cost = Column(Float, default=0.0)
-    actual_cost = Column(Float, default=0.0)
-    billed_hours = Column(Integer, default=0)
-    utilized_hours = Column(Integer, default=0)
+    
+    # Revenue tracking (based on billable percentage)
+    estimated_revenue = Column(Float, default=0.0)  # Estimated revenue from billable hours
+    actual_revenue = Column(Float, default=0.0)  # Actual revenue from billable hours
+    
+    # Cost tracking (based on allocation percentage)
+    estimated_cost = Column(Float, default=0.0)  # Estimated cost from allocated hours
+    actual_cost = Column(Float, default=0.0)  # Actual cost from allocated hours
+    
+    # Hours tracking
+    billed_hours = Column(Integer, default=0)  # Hours billable to client (allocation × billable %)
+    utilized_hours = Column(Integer, default=0)  # Hours allocated (allocation %)
+    total_hours_in_period = Column(Integer, default=0)  # Total working hours in the period (e.g., 160/month)
+    
     last_calculated_date = Column(Date, default=date.today)
     notes = Column(Text)
     
@@ -385,6 +447,20 @@ class ProjectRateRequirements(Base):
     # Relationships
     project = relationship("Project", back_populates="rate_requirements")
     domain = relationship("Domain", back_populates="rate_requirements")
+
+
+class ProjectRoleRequirements(Base):
+    """Project Role Requirements - Team Structure Planning"""
+    __tablename__ = 'project_role_requirements'
+    
+    id = Column(Integer, primary_key=True)
+    proj_id = Column(Integer, ForeignKey('projects.id'), nullable=False)
+    role_name = Column(String, nullable=False)  # Architect, Project Manager, Senior Developer, etc.
+    required_count = Column(Integer, nullable=False, default=1)
+    utilization_percentage = Column(Integer, nullable=False, default=100)  # 0-100%
+    
+    # Relationships
+    project = relationship("Project", back_populates="role_requirements")
 
 
 class RiskRegister(Base):

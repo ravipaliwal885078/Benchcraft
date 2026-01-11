@@ -69,16 +69,30 @@ class SQLDatabaseTool:
         finally:
             session.close()
     
-    def create_allocation(self, emp_id: int, proj_id: int, start_date, end_date=None, billing_rate=None):
+    def create_allocation(self, emp_id: int, proj_id: int, start_date, end_date=None, billing_rate=None, allocation_percentage=100, billable_percentage=100):
         """Create new allocation and update employee status atomically"""
         session = self.Session()
         try:
+            # Validate allocation percentage doesn't exceed 100%
+            from utils.allocation_validator import validate_allocation_percentage
+            is_valid, error_msg = validate_allocation_percentage(
+                session,
+                emp_id,
+                allocation_percentage,
+                start_date,
+                end_date
+            )
+            if not is_valid:
+                raise ValueError(error_msg)
+            
             allocation = Allocation(
                 emp_id=emp_id,
                 proj_id=proj_id,
                 start_date=start_date,
                 end_date=end_date,
                 billing_rate=billing_rate,
+                allocation_percentage=allocation_percentage,
+                billable_percentage=billable_percentage,
                 is_revealed=False
             )
             session.add(allocation)
