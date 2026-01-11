@@ -8,10 +8,13 @@ from tools.vector_db import ChromaSearchTool
 from models import Project, ProjectStatus, ProjectType, ProjectRoleRequirements, Allocation, Employee, AllocationFinancial
 from datetime import datetime, date
 from utils.allocation_validator import validate_allocation_percentage
+from agents.team_suggestion_agent import TeamSuggestionAgent
+from agents.team_suggestion_agent import TeamSuggestionAgent
 
 bp = Blueprint('projects', __name__)
 db_tool = SQLDatabaseTool()
 vector_tool = ChromaSearchTool()
+team_suggestion_agent = TeamSuggestionAgent()
 
 @bp.route('/projects', methods=['GET'])
 def get_projects():
@@ -87,10 +90,24 @@ def create_project():
         # Parse project_type
         project_type = None
         if data.get('project_type'):
-            try:
-                project_type = ProjectType[data['project_type']]
-            except KeyError:
-                return jsonify({'error': f'Invalid project_type: {data["project_type"]}'}), 400
+            project_type_str = str(data['project_type']).strip()
+            # Try to find by value first (frontend sends enum values like "Fixed_Price", "T&M", "Retainer")
+            found = False
+            for pt in ProjectType:
+                if pt.value == project_type_str:
+                    project_type = pt
+                    found = True
+                    break
+            
+            # If not found by value, try by member name (uppercase with underscores)
+            if not found:
+                try:
+                    # Convert "Fixed_Price" -> "FIXED_PRICE", "T&M" -> "T_AND_M", "Retainer" -> "RETAINER"
+                    member_name = project_type_str.upper().replace('&', '_AND_').replace('-', '_').replace(' ', '_')
+                    project_type = ProjectType[member_name]
+                except KeyError:
+                    valid_types = ', '.join([pt.value for pt in ProjectType])
+                    return jsonify({'error': f'Invalid project_type: {data["project_type"]}. Valid values are: {valid_types}'}), 400
         
         # Create project (without project_code first, will generate after commit)
         project = Project(

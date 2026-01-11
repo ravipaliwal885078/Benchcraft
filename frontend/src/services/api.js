@@ -146,6 +146,16 @@ export const chatWithAgent = async (question, conversationHistory = [], useWebSe
   return response.data
 }
 
+export const suggestTeam = async (projectDetails, roleRequirements, startDate, endDate) => {
+  const response = await api.post('/projects/suggest-team', {
+    project_details: projectDetails,
+    role_requirements: roleRequirements,
+    start_date: startDate,
+    end_date: endDate
+  })
+  return response.data
+}
+
 export const createProjectFeedback = async (projectId, feedbackData) => {
   const response = await api.post(`/projects/${projectId}/feedback`, feedbackData)
   return response.data

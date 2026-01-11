@@ -17,8 +17,10 @@ load_dotenv(Path(__file__).parent / '.env')
 sys.path.insert(0, str(Path(__file__).parent))
 
 from models import (
-    Base, Employee, Project, EmployeeSkill, Allocation, RoleLevel, EmployeeStatus, ProjectStatus,
-    Domain, EmployeeDomain, ProjectDomain, RateCard, PriorityScoring, DomainType, RateType, PriorityTier
+    Base, Employee, Project, EmployeeSkill, Allocation, RoleLevel, EmployeeStatus, ProjectStatus, ProjectType,
+    Domain, EmployeeDomain, ProjectDomain, RateCard, PriorityScoring, DomainType, RateType, PriorityTier,
+    Feedback360, BenchLedger, FinancialMetrics, AllocationFinancial, ProjectRateRequirements, ProjectRoleRequirements,
+    RiskRegister, DomainPriority, PeriodType, RateNegotiationStatus, RiskType, RiskSeverity, RiskStatus
 )
 from config import Config
 from tools.vector_db import ChromaSearchTool
@@ -182,6 +184,11 @@ def seed_database():
         # Create 5 projects
         print("\nCreating projects...")
         projects = []
+        industry_domains = ["FinTech", "Healthcare", "Retail", "Manufacturing", "Telecom", "Education", "Other"]
+        project_types = list(ProjectType)
+        currencies = ["INR", "USD", "EUR"]
+        statuses = [ProjectStatus.PIPELINE, ProjectStatus.ACTIVE, ProjectStatus.ON_HOLD, ProjectStatus.CLOSED]
+        
         for i in range(5):
             client = random.choice(CLIENTS)
             description = random.choice(PROJECT_DESCRIPTIONS)
@@ -193,22 +200,40 @@ def seed_database():
                     tech_stack_list.append(skill)
             tech_stack = ", ".join(tech_stack_list[:5]) if tech_stack_list else "Python, JavaScript"
             
+            # Select random industry domain based on client/project type
+            industry_domain = random.choice(industry_domains)
+            # Match industry domain to client if possible
+            if "Finance" in client or "FinTech" in description:
+                industry_domain = "FinTech"
+            elif "Health" in client or "Healthcare" in description:
+                industry_domain = "Healthcare"
+            elif "Retail" in client or "e-commerce" in description.lower():
+                industry_domain = "Retail"
+            
             project = Project(
                 client_name=client,
                 project_name=f"{client} Platform",
                 description=description,
                 budget_cap=random.randint(50000, 200000),
+                billing_currency=random.choice(currencies),
+                project_type=random.choice(project_types),
+                industry_domain=industry_domain,
                 start_date=date.today() + timedelta(days=random.randint(-30, 30)),
                 end_date=date.today() + timedelta(days=random.randint(90, 365)),
-                status=random.choice([ProjectStatus.PIPELINE, ProjectStatus.ACTIVE]),
+                status=random.choice(statuses),
                 probability=random.randint(50, 100) if i < 2 else 100,
                 tech_stack=tech_stack
             )
             
             session.add(project)
-            session.flush()
+            session.flush()  # Flush to get the project.id
+            
+            # Generate project_code: PROJ-<Year>-<PrimaryKey>
+            current_year = date.today().year
+            project.project_code = f"PROJ-{current_year}-{project.id}"
+            
             projects.append(project)
-            print(f"  Created project {i+1}/5: {client} Platform")
+            print(f"  Created project {i+1}/5: {client} Platform (Code: {project.project_code})")
         
         # Create employee domains (assign 1-3 domains per employee)
         print("\nCreating employee domains...")
@@ -317,10 +342,219 @@ def seed_database():
                     rate_card_id=rate_card_id
                 )
                 session.add(allocation)
+                session.flush()  # Flush to get allocation.id
+                
+                # Create AllocationFinancial for each allocation
+                if billing_rate and rate_card_id:
+                    # Calculate financial metrics
+                    total_hours = 160  # Monthly hours
+                    utilized_hours = int((total_hours * allocation_pct) / 100)
+                    billed_hours = int((total_hours * allocation_pct * billable_pct) / 10000)
+                    cost_rate = employee.ctc_monthly / 160.0
+                    estimated_revenue = billing_rate * billed_hours
+                    estimated_cost = cost_rate * utilized_hours
+                    gross_margin = ((estimated_revenue - estimated_cost) / estimated_revenue * 100) if estimated_revenue > 0 else 0
+                    
+                    alloc_financial = AllocationFinancial(
+                        allocation_id=allocation.id,
+                        rate_card_id=rate_card_id,
+                        billing_rate=billing_rate,
+                        cost_rate=round(cost_rate, 2),
+                        gross_margin_percentage=round(gross_margin, 2),
+                        estimated_revenue=round(estimated_revenue, 2),
+                        estimated_cost=round(estimated_cost, 2),
+                        billed_hours=billed_hours,
+                        utilized_hours=utilized_hours,
+                        total_hours_in_period=total_hours
+                    )
+                    session.add(alloc_financial)
                 
                 # Update employee status
                 employee.status = EmployeeStatus.ALLOCATED
                 allocated_employees.append(employee.id)
+        
+        # Create project domains (assign 1-2 domains per project)
+        print("\nCreating project domains...")
+        for project in projects:
+            num_domains = random.randint(1, 2)
+            project_domains_list = random.sample(domains, min(num_domains, len(domains)))
+            
+            for domain in project_domains_list:
+                proj_domain = ProjectDomain(
+                    proj_id=project.id,
+                    domain_id=domain.id,
+                    priority=random.choice(list(DomainPriority)),
+                    weight=random.randint(5, 10),
+                    requirements=f"Requires expertise in {domain.domain_name} domain"
+                )
+                session.add(proj_domain)
+        
+        # Create project role requirements (for some projects)
+        print("\nCreating project role requirements...")
+        role_names = ["Architect", "Project Manager", "Senior Developer", "Developer", 
+                     "Business Analyst", "QA Engineer", "Tech Lead", "Designer"]
+        for project in projects[:3]:  # Add role requirements to first 3 projects
+            num_roles = random.randint(2, 4)
+            selected_roles = random.sample(role_names, min(num_roles, len(role_names)))
+            
+            for role_name in selected_roles:
+                # Use role defaults
+                role_defaults = {
+                    "Architect": {"utilization": 25, "max": 50},
+                    "Project Manager": {"utilization": 20, "max": 99},
+                    "Senior Developer": {"utilization": 100, "max": 100},
+                    "Developer": {"utilization": 100, "max": 100},
+                    "Business Analyst": {"utilization": 50, "max": 100},
+                    "QA Engineer": {"utilization": 50, "max": 99},
+                    "Tech Lead": {"utilization": 75, "max": 100},
+                    "Designer": {"utilization": 75, "max": 100}
+                }
+                defaults = role_defaults.get(role_name, {"utilization": 100, "max": 100})
+                
+                role_req = ProjectRoleRequirements(
+                    proj_id=project.id,
+                    role_name=role_name,
+                    required_count=random.randint(1, 3),
+                    utilization_percentage=defaults["utilization"]
+                )
+                session.add(role_req)
+        
+        # Create project rate requirements
+        print("\nCreating project rate requirements...")
+        for project in projects[:2]:  # Add rate requirements to first 2 projects
+            # Select 1-2 domains for rate requirements
+            project_domains = session.query(ProjectDomain).filter(ProjectDomain.proj_id == project.id).all()
+            if project_domains:
+                selected_domains = random.sample(project_domains, min(2, len(project_domains)))
+                for proj_domain in selected_domains:
+                    # Get average rate for this domain
+                    domain_rates = session.query(RateCard).filter(
+                        RateCard.domain_id == proj_domain.domain_id,
+                        RateCard.is_active == True
+                    ).all()
+                    if domain_rates:
+                        avg_rate = sum([r.hourly_rate for r in domain_rates]) / len(domain_rates)
+                        # Get domain name
+                        domain_obj = session.query(Domain).filter(Domain.id == proj_domain.domain_id).first()
+                        domain_name = domain_obj.domain_name if domain_obj else "Unknown"
+                        rate_req = ProjectRateRequirements(
+                            proj_id=project.id,
+                            domain_id=proj_domain.domain_id,
+                            min_acceptable_rate=round(avg_rate * 0.8, 2),
+                            max_acceptable_rate=round(avg_rate * 1.2, 2),
+                            preferred_rate=round(avg_rate, 2),
+                            rate_negotiation_status=random.choice(list(RateNegotiationStatus)),
+                            rate_notes=f"Rate requirements for {domain_name} domain"
+                        )
+                        session.add(rate_req)
+        
+        # Create feedback entries
+        print("\nCreating feedback entries...")
+        feedback_tags = ["Delivery", "Innovation", "Communication", "Technical Excellence", "Leadership", "Problem Solving"]
+        for project in active_projects[:2] if active_projects else []:  # Add feedback for first 2 active projects
+            project_allocations = session.query(Allocation).filter(Allocation.proj_id == project.id).all()
+            if project_allocations:
+                # Create 1-2 feedback entries per project
+                num_feedbacks = random.randint(1, 2)
+                selected_allocations = random.sample(project_allocations, min(num_feedbacks, len(project_allocations)))
+                
+                for allocation in selected_allocations:
+                    feedback = Feedback360(
+                        emp_id=allocation.emp_id,
+                        proj_id=project.id,
+                        rating=random.randint(3, 5),
+                        feedback=f"Strong performance on {project.project_name}. Demonstrated excellent technical skills and collaboration.",
+                        tags=", ".join(random.sample(feedback_tags, random.randint(2, 4)))
+                    )
+                    session.add(feedback)
+        
+        # Create bench ledger entries
+        print("\nCreating bench ledger entries...")
+        bench_employees = [e for e in employees if e.status == EmployeeStatus.BENCH]
+        for employee in bench_employees[:5]:  # Create bench entries for first 5 bench employees
+            # Check if employee has previous allocation
+            last_allocation = session.query(Allocation).filter(
+                Allocation.emp_id == employee.id
+            ).order_by(Allocation.end_date.desc()).first()
+            
+            if last_allocation and last_allocation.end_date:
+                bench_start = last_allocation.end_date
+                bench_end = None  # Ongoing bench
+                days_on_bench = (date.today() - bench_start).days
+            else:
+                bench_start = date.today() - timedelta(days=random.randint(1, 60))
+                bench_end = None
+                days_on_bench = (date.today() - bench_start).days
+            
+            cost_per_day = employee.ctc_monthly / 30.0
+            cost_incurred = cost_per_day * days_on_bench
+            
+            bench_entry = BenchLedger(
+                emp_id=employee.id,
+                start_date=bench_start,
+                end_date=bench_end,
+                reason="Project End",
+                cost_incurred=round(cost_incurred, 2)
+            )
+            session.add(bench_entry)
+        
+        # Create financial metrics
+        print("\nCreating financial metrics...")
+        # Company-wide metrics
+        company_metrics = FinancialMetrics(
+            emp_id=None,
+            proj_id=None,
+            target_gross_margin_percentage=50.0,
+            actual_gross_margin_percentage=random.uniform(45.0, 55.0),
+            total_revenue=random.uniform(500000, 2000000),
+            total_cost=random.uniform(250000, 1000000),
+            gross_profit=0.0,  # Will be calculated
+            period_start_date=date.today().replace(day=1),
+            period_end_date=date.today(),
+            period_type=PeriodType.MONTHLY
+        )
+        company_metrics.gross_profit = company_metrics.total_revenue - company_metrics.total_cost
+        session.add(company_metrics)
+        
+        # Project-specific metrics
+        for project in active_projects[:2] if active_projects else []:
+            project_metrics = FinancialMetrics(
+                emp_id=None,
+                proj_id=project.id,
+                target_gross_margin_percentage=50.0,
+                actual_gross_margin_percentage=random.uniform(40.0, 60.0),
+                total_revenue=random.uniform(50000, 200000),
+                total_cost=random.uniform(25000, 100000),
+                gross_profit=0.0,
+                period_start_date=project.start_date,
+                period_end_date=date.today(),
+                period_type=PeriodType.PROJECT_LIFETIME
+            )
+            project_metrics.gross_profit = project_metrics.total_revenue - project_metrics.total_cost
+            session.add(project_metrics)
+        
+        # Create risk register entries
+        print("\nCreating risk register entries...")
+        risk_types = list(RiskType)
+        risk_severities = list(RiskSeverity)
+        risk_statuses = list(RiskStatus)
+        
+        # Create risks for some employees
+        for employee in employees[:5]:  # First 5 employees
+            if random.random() < 0.3:  # 30% chance of having a risk
+                risk = RiskRegister(
+                    emp_id=employee.id,
+                    project_id=random.choice([p.id for p in active_projects]) if active_projects and random.random() < 0.7 else None,
+                    risk_type=random.choice(risk_types),
+                    severity=random.choice(risk_severities),
+                    description=f"Risk identified for {employee.first_name} {employee.last_name}: {random.choice(['Notice period risk', 'Skill gap identified', 'Performance concerns', 'Critical role dependency'])}",
+                    mitigation_plan=f"Mitigation plan: {random.choice(['Cross-training', 'Backup resource', 'Performance improvement plan', 'Knowledge transfer'])}",
+                    mitigation_owner_emp_id=random.choice([e.id for e in employees if e.id != employee.id]) if len(employees) > 1 else None,
+                    identified_date=date.today() - timedelta(days=random.randint(1, 30)),
+                    target_resolution_date=date.today() + timedelta(days=random.randint(30, 90)),
+                    status=random.choice(risk_statuses)
+                )
+                session.add(risk)
         
         # Create priority scores for all employees
         print("\nCreating priority scores...")
@@ -384,8 +618,16 @@ def seed_database():
         print(f"   - {len(projects)} projects created")
         print(f"   - {len(domains)} domains created")
         print(f"   - Employee domains assigned")
+        print(f"   - Project domains assigned")
         print(f"   - Rate cards created")
         print(f"   - Allocations created")
+        print(f"   - Allocation financials created")
+        print(f"   - Project role requirements created")
+        print(f"   - Project rate requirements created")
+        print(f"   - Feedback entries created")
+        print(f"   - Bench ledger entries created")
+        print(f"   - Financial metrics created")
+        print(f"   - Risk register entries created")
         print(f"   - Priority scores calculated")
         print(f"   - ChromaDB embeddings generated")
         
