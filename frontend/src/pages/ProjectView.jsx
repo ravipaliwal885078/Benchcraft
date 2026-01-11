@@ -108,12 +108,6 @@ const ProjectView = () => {
     const startDate = memberForm.start_date || today
     const endDate = memberForm.end_date || null
 
-    // Validate start date (must be >= today)
-    if (startDate < today) {
-      setMemberValidationError('Start date cannot be in the past. Please select today or a future date.')
-      return false
-    }
-
     // Validate end date (must be >= start date)
     if (endDate && endDate < startDate) {
       setMemberValidationError('End date cannot be before start date.')
@@ -231,13 +225,6 @@ const ProjectView = () => {
         const allocationPercentage = parseInt(member.allocation_percentage) || 0
         const startDate = member.start_date || getTodayDate()
         const endDate = member.end_date || null
-
-        // Validate start date (must be >= today)
-        if (startDate < today) {
-          errors[i] = { message: 'Start date cannot be in the past', isValidating: false }
-          hasErrors = true
-          continue
-        }
 
         // Validate end date (must be >= start date)
         if (endDate && endDate < startDate) {
@@ -380,20 +367,7 @@ const ProjectView = () => {
   }
 
   const validateTeamMemberDates = async (index, member) => {
-    const today = getTodayDate()
     const errors = { ...validationErrors }
-    
-    // Validate start date
-    if (member.start_date) {
-      if (member.start_date < today) {
-        errors[index] = {
-          message: 'Start date cannot be in the past. Please select today or a future date.',
-          isValidating: false
-        }
-        setValidationErrors(errors)
-        return
-      }
-    }
     
     // Validate end date
     if (member.end_date && member.start_date) {
@@ -1143,29 +1117,13 @@ const ProjectView = () => {
                     type="date"
                     required
                     value={memberForm.start_date}
-                    min={(() => {
-                      const now = new Date()
-                      const year = now.getFullYear()
-                      const month = String(now.getMonth() + 1).padStart(2, '0')
-                      const day = String(now.getDate()).padStart(2, '0')
-                      return `${year}-${month}-${day}`
-                    })()}
                     onChange={(e) => {
                       setMemberForm({ ...memberForm, start_date: e.target.value })
                       setMemberValidationError(null)
                     }}
                     onBlur={validateMemberAllocation}
-                    className={`w-full border rounded-md px-3 py-2 ${
-                      memberValidationError && memberValidationError.includes('Start date')
-                        ? 'border-red-500 bg-red-50'
-                        : 'border-gray-300'
-                    }`}
+                    className="w-full border rounded-md px-3 py-2 border-gray-300"
                   />
-                  {memberValidationError && memberValidationError.includes('Start date') && (
-                    <div className="mt-1 text-xs text-red-600">
-                      {memberValidationError}
-                    </div>
-                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1377,20 +1335,10 @@ const ProjectView = () => {
                             <input
                               type="date"
                               value={member.start_date || ''}
-                              min={getTodayDate()}
                               onChange={(e) => handleTeamMemberChange(index, 'start_date', e.target.value)}
                               onBlur={() => validateTeamMemberDates(index, member)}
-                              className={`w-full border rounded-md px-2 py-1 text-sm ${
-                                validationErrors[index] && validationErrors[index].message.includes('Start date')
-                                  ? 'border-red-500 bg-red-50'
-                                  : 'border-gray-300'
-                              }`}
+                              className="w-full border rounded-md px-2 py-1 text-sm border-gray-300"
                             />
-                            {validationErrors[index] && validationErrors[index].message.includes('Start date') && !validationErrors[index].isValidating && (
-                              <div className="mt-1 text-xs text-red-600 whitespace-normal break-words max-w-48">
-                                {validationErrors[index].message}
-                              </div>
-                            )}
                           </div>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">

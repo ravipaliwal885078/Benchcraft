@@ -3,11 +3,14 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Plus, FileText, DollarSign, Calendar, Edit, Users, X } from 'lucide-react'
 import { getProjects, createProject, updateProject, updateProjectTeam, getProject, getEmployees, removeTeamMember, checkEmployeeAllocation } from '../services/api'
 import ProjectWizard from '../components/ProjectWizard'
+import Pagination from '../components/Pagination'
 
 const Pipeline = () => {
   const navigate = useNavigate()
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 9 // Cards format
   const [showWizard, setShowWizard] = useState(false)
   const [showUpdateModal, setShowUpdateModal] = useState(false)
   const [showTeamModal, setShowTeamModal] = useState(false)
@@ -313,8 +316,16 @@ const Pipeline = () => {
       />
 
       {/* Projects List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {projects.map((project) => (
+      {(() => {
+        const startIndex = (currentPage - 1) * itemsPerPage
+        const endIndex = startIndex + itemsPerPage
+        const paginatedProjects = projects.slice(startIndex, endIndex)
+        const totalPages = Math.ceil(projects.length / itemsPerPage)
+        
+        return (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {paginatedProjects.map((project) => (
           <div key={project.id} className="bg-white rounded-lg shadow-md p-6">
             <div className="flex items-start justify-between mb-4">
               <div>

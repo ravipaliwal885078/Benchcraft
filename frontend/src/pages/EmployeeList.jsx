@@ -9,6 +9,8 @@ import { Users, Plus, Search, Filter, Edit, Trash2, Eye, Award, AlertTriangle, B
 const EmployeeList = () => {
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 9 // Cards format
   const [searchTerm, setSearchTerm] = useState('')
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('')

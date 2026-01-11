@@ -2,7 +2,14 @@
 Team Suggestion Agent - AI-powered team allocation recommendations
 Considers availability, skills, experience, domains, and allocation constraints
 """
-from agents.base_agent import BaseAgent
+# Try to import BaseAgent, but make it optional
+try:
+    from agents.base_agent import BaseAgent
+except ImportError:
+    # Fallback if BaseAgent isn't available
+    class BaseAgent:
+        def __init__(self, *args, **kwargs):
+            self.agent = None
 from tools.sql_db import SQLDatabaseTool
 from models import Employee, Allocation, EmployeeSkill, EmployeeDomain, ProjectDomain, Domain, Project
 from datetime import date, datetime
@@ -18,29 +25,43 @@ class TeamSuggestionAgent(BaseAgent):
         self.db_tool = SQLDatabaseTool()
         self.llm = None
         self._init_llm()
-        super().__init__(
-            role="Team Allocation Strategist",
-            goal="Suggest optimal team members for projects based on availability, skills, experience, and allocation constraints",
-            backstory="You are an expert resource manager who analyzes employee profiles, availability, skills, and project requirements to suggest the best team composition."
-        )
+        # Try to initialize BaseAgent, but don't fail if CrewAI isn't available
+        try:
+            super().__init__(
+                role="Team Allocation Strategist",
+                goal="Suggest optimal team members for projects based on availability, skills, experience, and allocation constraints",
+                backstory="You are an expert resource manager who analyzes employee profiles, availability, skills, and project requirements to suggest the best team composition."
+            )
+        except Exception as e:
+            # If CrewAI Agent fails, we can still use the agent without it
+            # This is non-critical - the agent doesn't actually use CrewAI for its core functionality
+            print(f"TeamSuggestionAgent: CrewAI Agent initialization failed (non-critical, continuing without it): {e}")
+            # Set agent to None so we don't break if something tries to access it
+            if hasattr(self, 'agent'):
+                self.agent = None
+            else:
+                # Create a dummy attribute to avoid AttributeError
+                self.agent = None
     
     def _init_llm(self):
-        """Initialize Gemini LLM with lazy loading"""
+        """Initialize Gemini LLM with lazy loading - don't test during init"""
         try:
             api_key = os.getenv('GEMINI_API_KEY')
             if api_key:
                 genai.configure(api_key=api_key)
-                # Try different model names
+                # Try different model names, but don't test during init
                 model_names = ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-pro']
                 for model_name in model_names:
                     try:
                         self.llm = genai.GenerativeModel(model_name)
-                        # Test the model
-                        self.llm.generate_content("test")
-                        print(f"TeamSuggestionAgent: Using model {model_name}")
+                        # Don't test during init - test will happen on first use
+                        print(f"TeamSuggestionAgent: Initialized model {model_name} (will test on first use)")
                         break
-                    except Exception:
+                    except Exception as e:
+                        print(f"TeamSuggestionAgent: Failed to initialize {model_name}: {e}")
                         continue
+            else:
+                print("TeamSuggestionAgent: No GEMINI_API_KEY found, LLM features disabled")
         except Exception as e:
             print(f"TeamSuggestionAgent: LLM initialization failed: {e}")
             self.llm = None
@@ -194,7 +215,8 @@ class TeamSuggestionAgent(BaseAgent):
                 tech_stack,
                 industry_domain,
                 description,
-                availability
+                availability,
+                required_utilization
             )
             
             candidates.append({
@@ -270,7 +292,8 @@ class TeamSuggestionAgent(BaseAgent):
         tech_stack: str,
         industry_domain: str,
         description: str,
-        availability: Dict
+        availability: Dict,
+        required_utilization: int
     ) -> tuple:
         """Calculate match score and reasons"""
         score = 0.0

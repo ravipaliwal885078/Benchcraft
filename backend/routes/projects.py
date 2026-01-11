@@ -9,12 +9,24 @@ from models import Project, ProjectStatus, ProjectType, ProjectRoleRequirements,
 from datetime import datetime, date
 from utils.allocation_validator import validate_allocation_percentage
 from agents.team_suggestion_agent import TeamSuggestionAgent
-from agents.team_suggestion_agent import TeamSuggestionAgent
 
 bp = Blueprint('projects', __name__)
 db_tool = SQLDatabaseTool()
 vector_tool = ChromaSearchTool()
-team_suggestion_agent = TeamSuggestionAgent()
+# Initialize agent lazily to avoid startup errors
+_team_suggestion_agent = None
+
+def get_team_suggestion_agent():
+    """Lazy initialization of team suggestion agent"""
+    global _team_suggestion_agent
+    if _team_suggestion_agent is None:
+        try:
+            _team_suggestion_agent = TeamSuggestionAgent()
+        except Exception as e:
+            print(f"Warning: Failed to initialize TeamSuggestionAgent: {e}")
+            # Return a dummy agent that will fail gracefully
+            raise
+    return _team_suggestion_agent
 
 @bp.route('/projects', methods=['GET'])
 def get_projects():
@@ -192,6 +204,78 @@ def create_project():
         return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
     finally:
         session.close()
+
+@bp.route('/projects/suggest-team', methods=['POST'])
+def suggest_team():
+    """
+    AI-powered team suggestion endpoint
+    Input: {
+        'project_details': {
+            'project_name': str,
+            'description': str,
+            'tech_stack': str or list,
+            'industry_domain': str
+        },
+        'role_requirements': [
+            {
+                'role_name': str,
+                'required_count': int,
+                'utilization_percentage': int
+            }
+        ],
+        'start_date': 'YYYY-MM-DD',
+        'end_date': 'YYYY-MM-DD' or null
+    }
+    """
+    data = request.get_json()
+    try:
+        project_details = data.get('project_details', {})
+        role_requirements = data.get('role_requirements', [])
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        
+        if not project_details or not role_requirements or not start_date:
+            return jsonify({'error': 'project_details, role_requirements, and start_date are required'}), 400
+        
+        # Call AI agent (it creates its own session internally)
+        try:
+            agent = get_team_suggestion_agent()
+        except Exception as agent_error:
+            import traceback
+            error_traceback = traceback.format_exc()
+            print(f"Error initializing TeamSuggestionAgent: {error_traceback}")
+            return jsonify({
+                'error': f'Failed to initialize AI agent: {str(agent_error)}',
+                'traceback': error_traceback
+            }), 500
+        
+        try:
+            suggestions = agent.suggest_team(
+                project_id=None,  # New project
+                project_details=project_details,
+                role_requirements=role_requirements,
+                start_date=start_date,
+                end_date=end_date
+            )
+        except Exception as suggest_error:
+            import traceback
+            error_traceback = traceback.format_exc()
+            print(f"Error in suggest_team method: {error_traceback}")
+            return jsonify({
+                'error': f'Failed to generate suggestions: {str(suggest_error)}',
+                'traceback': error_traceback
+            }), 500
+        
+        return jsonify(suggestions), 200
+        
+    except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        print(f"Error in suggest_team endpoint: {error_traceback}")
+        return jsonify({
+            'error': str(e),
+            'traceback': error_traceback
+        }), 500
 
 @bp.route('/projects/<int:project_id>', methods=['GET'])
 def get_project(project_id):

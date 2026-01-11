@@ -10,6 +10,8 @@ const Market = () => {
   const [maxBudget, setMaxBudget] = useState('')
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 9 // Cards format
   const [projects, setProjects] = useState([])
   const [showFilters, setShowFilters] = useState(false)
 
@@ -274,23 +276,39 @@ const Market = () => {
       </div>
 
       {/* Results */}
-      {results.length > 0 && (
-        <div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            Found {results.length} matching candidates
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {results.map((profile, idx) => (
-              <AnonymizedCard
-                key={profile.uuid || idx}
-                profile={profile}
-                onReveal={handleAllocate}
-                projects={projects}
+      {results.length > 0 && (() => {
+        const startIndex = (currentPage - 1) * itemsPerPage
+        const endIndex = startIndex + itemsPerPage
+        const paginatedResults = results.slice(startIndex, endIndex)
+        const totalPages = Math.ceil(results.length / itemsPerPage)
+        
+        return (
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">
+              Found {results.length} matching candidates
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {paginatedResults.map((profile, idx) => (
+                <AnonymizedCard
+                  key={profile.uuid || idx}
+                  profile={profile}
+                  onReveal={handleAllocate}
+                  projects={projects}
+                />
+              ))}
+            </div>
+            {totalPages > 1 && (
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                itemsPerPage={itemsPerPage}
+                totalItems={results.length}
               />
-            ))}
+            )}
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {results.length === 0 && !loading && query && (
         <div className="text-center py-12 text-gray-500">

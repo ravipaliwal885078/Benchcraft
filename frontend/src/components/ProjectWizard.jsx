@@ -195,6 +195,13 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
       
     } catch (error) {
       console.error('Failed to generate AI suggestions:', error)
+      console.error('Error details:', error.response?.data || error.message)
+      // Show user-friendly error message
+      if (error.response?.data?.error) {
+        alert(`Failed to generate AI suggestions: ${error.response.data.error}`)
+      } else {
+        alert('Failed to generate AI suggestions. Please check the console for details.')
+      }
       // Fallback to empty rows
       const allotmentRows = []
       teamStructure.forEach(structure => {
@@ -551,6 +558,9 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
               onAllotmentChange={handleAllotmentChange}
               getEmployeesForRole={getEmployeesForRole}
               errors={allotmentErrors}
+              aiSuggestions={aiSuggestions}
+              loadingSuggestions={loadingSuggestions}
+              onGenerateSuggestions={generateAISuggestions}
             />
           )}
           {currentStep === 4 && (
@@ -956,10 +966,31 @@ const Step2TeamStructure = ({ structure, onChange, onAdd, onRemove, onRoleChange
 }
 
 // Step 3: Team Allotment
-const Step3TeamAllotment = ({ allotment, employees, onChange, onAllotmentChange, getEmployeesForRole, errors, aiSuggestions, loadingSuggestions }) => {
+const Step3TeamAllotment = ({ allotment, employees, onChange, onAllotmentChange, getEmployeesForRole, errors, aiSuggestions, loadingSuggestions, onGenerateSuggestions }) => {
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">Assign Resources to Roles</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-gray-900">Assign Resources to Roles</h3>
+        <button
+          onClick={onGenerateSuggestions}
+          disabled={loadingSuggestions}
+          className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+        >
+          {loadingSuggestions ? (
+            <>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+              <span>Generating...</span>
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+              <span>AI Suggest Team</span>
+            </>
+          )}
+        </button>
+      </div>
       
       {/* AI Insights Section */}
       {loadingSuggestions && (
