@@ -42,13 +42,13 @@ def create_all_tables(engine):
         traceback.print_exc()
         return False
 
-def migrate_risk_register_table(conn):
+def migrate_risk_register_table(conn, engine):
     """Ensure risk_register table has correct schema"""
     print("\n" + "=" * 60)
     print("Step 2.1: Migrating risk_register Table")
     print("=" * 60)
     
-    inspector = inspect(conn)
+    inspector = inspect(engine)
     
     # Check if risk_register table exists
     if 'risk_register' not in inspector.get_table_names():
@@ -142,13 +142,13 @@ def migrate_risk_register_table(conn):
     
     return True
 
-def migrate_project_wizard_fields(conn):
+def migrate_project_wizard_fields(conn, engine):
     """Add project wizard fields"""
     print("\n" + "=" * 60)
     print("Step 2.2: Migrating Project Wizard Fields")
     print("=" * 60)
     
-    inspector = inspect(conn)
+    inspector = inspect(engine)
     
     if 'projects' not in inspector.get_table_names():
         print("ERROR: projects table does not exist!")
@@ -225,13 +225,13 @@ def migrate_project_wizard_fields(conn):
     
     return True
 
-def migrate_add_rate_card_id(conn):
+def migrate_add_rate_card_id(conn, engine):
     """Add rate_card_id to allocations"""
     print("\n" + "=" * 60)
     print("Step 2.3: Adding rate_card_id to Allocations")
     print("=" * 60)
     
-    inspector = inspect(conn)
+    inspector = inspect(engine)
     
     if 'allocations' not in inspector.get_table_names():
         print("ERROR: allocations table does not exist!")
@@ -249,13 +249,13 @@ def migrate_add_rate_card_id(conn):
     
     return True
 
-def migrate_add_allocation_billable_percentage(conn):
+def migrate_add_allocation_billable_percentage(conn, engine):
     """Add allocation_percentage and billable_percentage to allocations"""
     print("\n" + "=" * 60)
     print("Step 2.4: Adding Allocation and Billable Percentage Fields")
     print("=" * 60)
     
-    inspector = inspect(conn)
+    inspector = inspect(engine)
     
     if 'allocations' not in inspector.get_table_names():
         print("ERROR: allocations table does not exist!")
@@ -376,13 +376,13 @@ def migrate_add_shadow_and_internal_allocation(conn):
     
     return True
 
-def migrate_add_total_hours_in_period(conn):
+def migrate_add_total_hours_in_period(conn, engine):
     """Add total_hours_in_period to allocation_financials"""
     print("\n" + "=" * 60)
     print("Step 2.6: Adding total_hours_in_period to Allocation Financials")
     print("=" * 60)
     
-    inspector = inspect(conn)
+    inspector = inspect(engine)
     
     if 'allocation_financials' not in inspector.get_table_names():
         print("ERROR: allocation_financials table does not exist!")
@@ -403,13 +403,13 @@ def migrate_add_total_hours_in_period(conn):
     
     return True
 
-def migrate_set_internal_allocation_percentage(conn):
+def migrate_set_internal_allocation_percentage(conn, engine):
     """Set internal_allocation_percentage = allocation_percentage for all allocations"""
     print("\n" + "=" * 60)
     print("Step 2.7: Setting Internal Allocation Percentage Values")
     print("=" * 60)
     
-    inspector = inspect(conn)
+    inspector = inspect(engine)
     
     if 'allocations' not in inspector.get_table_names():
         print("ERROR: allocations table does not exist!")
@@ -496,13 +496,13 @@ def main():
         # Step 2: Run all migrations
         with engine.connect() as conn:
             migrations = [
-                ("Risk Register Schema", lambda: migrate_risk_register_table(conn)),
-                ("Project Wizard Fields", lambda: migrate_project_wizard_fields(conn)),
-                ("Rate Card ID", lambda: migrate_add_rate_card_id(conn)),
-                ("Allocation & Billable Percentage", lambda: migrate_add_allocation_billable_percentage(conn)),
-                ("Shadow & Internal Allocation", lambda: migrate_add_shadow_and_internal_allocation(conn)),
-                ("Total Hours in Period", lambda: migrate_add_total_hours_in_period(conn)),
-                ("Set Internal Allocation Percentage", lambda: migrate_set_internal_allocation_percentage(conn)),
+                ("Risk Register Schema", lambda: migrate_risk_register_table(conn, engine)),
+                ("Project Wizard Fields", lambda: migrate_project_wizard_fields(conn, engine)),
+                ("Rate Card ID", lambda: migrate_add_rate_card_id(conn, engine)),
+                ("Allocation & Billable Percentage", lambda: migrate_add_allocation_billable_percentage(conn, engine)),
+                ("Shadow & Internal Allocation", lambda: migrate_add_shadow_and_internal_allocation(conn, engine)),
+                ("Total Hours in Period", lambda: migrate_add_total_hours_in_period(conn, engine)),
+                ("Set Internal Allocation Percentage", lambda: migrate_set_internal_allocation_percentage(conn, engine)),
             ]
             
             for name, migration_func in migrations:
