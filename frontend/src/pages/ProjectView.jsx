@@ -631,6 +631,7 @@ const ProjectView = () => {
       case 'CLOSED':
       case 'CANCELLED':
         return 'bg-red-600' // Red (not too bright, decent)
+      case 'ON_HOLD':
       case 'ON HOLD':
         return 'bg-gray-400' // Greyed out
       default:

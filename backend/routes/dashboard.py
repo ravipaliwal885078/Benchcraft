@@ -100,7 +100,8 @@ def get_comprehensive_dashboard():
     from models import (
         Employee, Allocation, Project, EmployeeStatus, ProjectStatus,
         RateCard, PriorityScoring, EmployeeDomain, Domain, EmployeeSkill,
-        RiskRegister, RiskStatus, BenchLedger, RoleLevel, PriorityTier, RateType
+        RiskRegister, RiskStatus, BenchLedger, RoleLevel, PriorityTier, RateType,
+        ProjectRoleRequirements
     )
     
     session = db_tool.Session()
@@ -324,8 +325,54 @@ def get_comprehensive_dashboard():
             except Exception:
                 domain_name = 'N/A'
             
-            # Simplified match count
-            matched_projects = random.randint(2, 5)
+            # Calculate actual matched projects count
+            matched_projects = 0
+            try:
+                # Get employee skills
+                employee_skills = [skill.skill_name.lower() for skill in session.query(EmployeeSkill).filter(
+                    EmployeeSkill.emp_id == emp.id
+                ).all()]
+                
+                # Find matching projects
+                # Match by: domain, role level, tech stack, or status (ACTIVE/PIPELINE)
+                matching_projects = session.query(Project).filter(
+                    or_(
+                        Project.status == ProjectStatus.ACTIVE,
+                        Project.status == ProjectStatus.PIPELINE
+                    )
+                ).all()
+                
+                for project in matching_projects:
+                    is_match = False
+                    
+                    # Match by domain
+                    if domain_name != 'N/A' and project.industry_domain:
+                        if domain_name.lower() in project.industry_domain.lower() or \
+                           project.industry_domain.lower() in domain_name.lower():
+                            is_match = True
+                    
+                    # Match by role level (check project role requirements)
+                    if not is_match and emp.role_level:
+                        role_requirements = session.query(ProjectRoleRequirements).filter(
+                            ProjectRoleRequirements.proj_id == project.id,
+                            ProjectRoleRequirements.role_name.ilike(f'%{emp.role_level}%')
+                        ).first()
+                        if role_requirements:
+                            is_match = True
+                    
+                    # Match by tech stack
+                    if not is_match and project.tech_stack and employee_skills:
+                        tech_stack_lower = project.tech_stack.lower()
+                        for skill in employee_skills:
+                            if skill in tech_stack_lower or tech_stack_lower in skill:
+                                is_match = True
+                                break
+                    
+                    if is_match:
+                        matched_projects += 1
+            except Exception as e:
+                # Fallback to 0 if matching fails
+                matched_projects = 0
             
             # Determine priority tier
             if priority and priority.priority_tier:
