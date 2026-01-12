@@ -108,14 +108,15 @@ def allocate_resource():
         
         # Validate allocation percentage (default to 100% if not provided)
         allocation_percentage = data.get('allocation_percentage', 100)
+        internal_allocation_percentage = data.get('internal_allocation_percentage', allocation_percentage)  # Default to allocation_percentage if not provided
         billable_percentage = data.get('billable_percentage', 100)
         
-        # Validate total allocation doesn't exceed 100%
+        # Validate total internal allocation doesn't exceed 100%
         from utils.allocation_validator import validate_allocation_percentage
         is_valid, error_msg = validate_allocation_percentage(
             session,
             employee.id,
-            allocation_percentage,
+            internal_allocation_percentage,  # Use internal_allocation_percentage for validation
             start_date,
             end_date
         )
@@ -130,6 +131,7 @@ def allocate_resource():
             end_date=end_date,
             billing_rate=billing_rate,
             allocation_percentage=allocation_percentage,
+            internal_allocation_percentage=internal_allocation_percentage,
             billable_percentage=billable_percentage,
             is_revealed=True  # Reveal immediately upon allocation
         )

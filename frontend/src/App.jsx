@@ -18,6 +18,10 @@ function Navigation() {
     if (path === '/') {
       return location.pathname === '/'
     }
+    // Special handling for Projects tab - should be active for both /pipeline and /projects paths
+    if (path === '/pipeline') {
+      return location.pathname.startsWith('/pipeline') || location.pathname.startsWith('/projects')
+    }
     return location.pathname.startsWith(path)
   }
   

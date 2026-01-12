@@ -601,14 +601,15 @@ def allocate_resource():
 
         # Validate allocation percentage (default to 100% if not provided)
         allocation_percentage = data.get('allocation_percentage', 100)
+        internal_allocation_percentage = data.get('internal_allocation_percentage', allocation_percentage)  # Default to allocation_percentage if not provided
         billable_percentage = data.get('billable_percentage', 100)
         
-        # Validate total allocation doesn't exceed 100%
+        # Validate total internal allocation doesn't exceed 100%
         from utils.allocation_validator import validate_allocation_percentage
         is_valid, error_msg = validate_allocation_percentage(
             session,
             employee.id,
-            allocation_percentage,
+            internal_allocation_percentage,  # Use internal_allocation_percentage for validation
             start_date,
             end_date
         )
@@ -622,6 +623,7 @@ def allocate_resource():
             end_date=end_date,
             billing_rate=billing_rate,
             allocation_percentage=allocation_percentage,
+            internal_allocation_percentage=internal_allocation_percentage,
             billable_percentage=billable_percentage,
             is_revealed=True  # Reveal immediately upon allocation
         )
@@ -668,7 +670,8 @@ def check_employee_allocation(employee_id):
     This queries the current DB state to ensure accurate validation.
     
     Input: {
-        'allocation_percentage': int,
+        'internal_allocation_percentage': int (preferred),
+        'allocation_percentage': int (fallback if internal_allocation_percentage not provided),
         'start_date': 'YYYY-MM-DD',
         'end_date': 'YYYY-MM-DD' (optional),
         'exclude_allocation_id': int (optional, for updates)
@@ -688,7 +691,12 @@ def check_employee_allocation(employee_id):
             return jsonify({'error': 'Employee not found'}), 404
         
         data = request.get_json()
-        new_allocation_percentage = int(data.get('allocation_percentage', 100))
+        # Use internal_allocation_percentage if provided, otherwise fallback to allocation_percentage
+        internal_allocation_percentage = data.get('internal_allocation_percentage')
+        if internal_allocation_percentage is None:
+            internal_allocation_percentage = data.get('allocation_percentage', 100)
+        internal_allocation_percentage = int(internal_allocation_percentage)
+        
         start_date = datetime.strptime(data['start_date'], '%Y-%m-%d').date()
         end_date = None
         if data.get('end_date'):
@@ -709,30 +717,35 @@ def check_employee_allocation(employee_id):
             if alloc_start <= new_end and start_date <= alloc_end:
                 overlapping_allocations.append(alloc)
         
-        # Calculate current total from DB
+        # Calculate current total from DB using internal_allocation_percentage
         current_total = 0
         for alloc in overlapping_allocations:
             try:
-                alloc_pct = getattr(alloc, 'allocation_percentage', None)
+                # Try to get internal_allocation_percentage (primary field)
+                alloc_pct = getattr(alloc, 'internal_allocation_percentage', None)
                 if alloc_pct is None:
-                    alloc_pct = getattr(alloc, 'utilization', 100) or 100
+                    # Fallback to allocation_percentage
+                    alloc_pct = getattr(alloc, 'allocation_percentage', None)
+                    if alloc_pct is None:
+                        # Fallback to utilization
+                        alloc_pct = getattr(alloc, 'utilization', 100) or 100
                 current_total += alloc_pct
             except (AttributeError, TypeError):
                 current_total += 100
         
-        # If allocation percentage is 0%, it doesn't count towards total (always valid)
-        if new_allocation_percentage == 0:
+        # If internal allocation percentage is 0%, it doesn't count towards total (always valid)
+        if internal_allocation_percentage == 0:
             would_be_total = current_total  # 0% doesn't add to total
             is_valid = True
             error_msg = None
         else:
-            would_be_total = current_total + new_allocation_percentage
+            would_be_total = current_total + internal_allocation_percentage
             
             # Use the validation function to check (which also queries DB)
             is_valid, error_msg = validate_allocation_percentage(
                 session,
                 employee_id,
-                new_allocation_percentage,
+                internal_allocation_percentage,
                 start_date,
                 end_date,
                 exclude_allocation_id

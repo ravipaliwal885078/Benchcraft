@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { getAllocationReport } from '../services/api'
-import Pagination from '../components/Pagination'
 
 const AllocationReport = () => {
   const [reportData, setReportData] = useState(null)
@@ -10,8 +9,6 @@ const AllocationReport = () => {
   const [includeBench, setIncludeBench] = useState(true)
   const [filterStatus, setFilterStatus] = useState('all')
   const [sortBy, setSortBy] = useState('priority')
-  const [currentPage, setCurrentPage] = useState(1)
-  const itemsPerPage = 10 // Grid/Table format
 
   useEffect(() => {
     loadReport()

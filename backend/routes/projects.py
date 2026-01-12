@@ -167,6 +167,7 @@ def create_project():
                 start_date=alloc_start_date,
                 end_date=alloc_end_date,
                 allocation_percentage=int(alloc_data.get('allocation_percentage', 100)),
+                internal_allocation_percentage=int(alloc_data.get('internal_allocation_percentage', alloc_data.get('allocation_percentage', 100))),
                 billable_percentage=int(alloc_data.get('billable_percentage', 100)),
                 billing_rate=float(alloc_data['billing_rate']) if alloc_data.get('billing_rate') else None,
                 is_revealed=False
@@ -317,6 +318,24 @@ def get_project(project_id):
                 except (AttributeError, KeyError):
                     billable_pct = 100
                 
+                # Safely get internal_allocation_percentage
+                internal_allocation_pct = allocation_pct  # default to allocation_percentage
+                try:
+                    internal_allocation_pct = alloc.internal_allocation_percentage
+                    if internal_allocation_pct is None:
+                        internal_allocation_pct = allocation_pct
+                except (AttributeError, KeyError):
+                    internal_allocation_pct = allocation_pct
+                
+                # Safely get is_trainee and mentoring_primary_emp_id
+                is_trainee = False
+                mentoring_primary_emp_id = None
+                try:
+                    is_trainee = alloc.is_trainee if hasattr(alloc, 'is_trainee') else False
+                    mentoring_primary_emp_id = alloc.mentoring_primary_emp_id if hasattr(alloc, 'mentoring_primary_emp_id') else None
+                except (AttributeError, KeyError):
+                    pass
+                
                 allocations.append({
                     'id': alloc.id,
                     'employee_id': alloc.employee.id,
@@ -328,9 +347,12 @@ def get_project(project_id):
                     'end_date': alloc.end_date.isoformat() if alloc.end_date else None,
                     'billing_rate': alloc.billing_rate,
                     'allocation_percentage': allocation_pct,
+                    'internal_allocation_percentage': internal_allocation_pct,
                     'billable_percentage': billable_pct,
                     'utilization': allocation_pct,  # Backward compatibility
-                    'is_revealed': alloc.is_revealed
+                    'is_revealed': alloc.is_revealed,
+                    'is_trainee': is_trainee,
+                    'mentoring_primary_emp_id': mentoring_primary_emp_id
                 })
         except Exception as e:
             # If there's an error accessing allocations (e.g., missing columns in DB)
@@ -346,6 +368,12 @@ def get_project(project_id):
                 for alloc in allocs:
                     # Get utilization if available, otherwise default to 100
                     utilization = getattr(alloc, 'utilization', 100) or 100
+                    allocation_pct = getattr(alloc, 'allocation_percentage', utilization) or utilization
+                    internal_allocation_pct = getattr(alloc, 'internal_allocation_percentage', allocation_pct) or allocation_pct
+                    billable_pct = getattr(alloc, 'billable_percentage', 100) or 100
+                    is_trainee = getattr(alloc, 'is_trainee', False) or False
+                    mentoring_primary_emp_id = getattr(alloc, 'mentoring_primary_emp_id', None)
+                    
                     allocations.append({
                         'id': alloc.id,
                         'employee_id': alloc.emp_id,
@@ -356,10 +384,13 @@ def get_project(project_id):
                         'start_date': alloc.start_date.isoformat() if alloc.start_date else None,
                         'end_date': alloc.end_date.isoformat() if alloc.end_date else None,
                         'billing_rate': alloc.billing_rate,
-                        'allocation_percentage': utilization,
-                        'billable_percentage': 100,
-                        'utilization': utilization,
-                        'is_revealed': alloc.is_revealed
+                        'allocation_percentage': allocation_pct,
+                        'internal_allocation_percentage': internal_allocation_pct,
+                        'billable_percentage': billable_pct,
+                        'utilization': allocation_pct,  # Backward compatibility
+                        'is_revealed': alloc.is_revealed,
+                        'is_trainee': is_trainee,
+                        'mentoring_primary_emp_id': mentoring_primary_emp_id
                     })
             except Exception as fallback_error:
                 print(f"Error in fallback allocation query: {fallback_error}")
@@ -599,7 +630,8 @@ def update_project_team(project_id):
                 'allocation_id': int (optional, for updates),
                 'start_date': 'YYYY-MM-DD',
                 'end_date': 'YYYY-MM-DD' (optional),
-                'allocation_percentage': int (0-100),
+                'allocation_percentage': int (0-100),  # Client-reported allocation
+                'internal_allocation_percentage': int (0-100, optional),  # Actual internal allocation
                 'billable_percentage': int (0-100),
                 'billing_rate': float (optional)
             }
@@ -633,10 +665,13 @@ def update_project_team(project_id):
             
             # Validate percentages
             allocation_percentage = alloc_data.get('allocation_percentage', 100)
+            internal_allocation_percentage = alloc_data.get('internal_allocation_percentage', allocation_percentage)  # Default to allocation_percentage if not provided
             billable_percentage = alloc_data.get('billable_percentage', 100)
             
             if not (0 <= allocation_percentage <= 100):
                 return jsonify({'error': 'allocation_percentage must be between 0 and 100'}), 400
+            if not (0 <= internal_allocation_percentage <= 100):
+                return jsonify({'error': 'internal_allocation_percentage must be between 0 and 100'}), 400
             if not (0 <= billable_percentage <= 100):
                 return jsonify({'error': 'billable_percentage must be between 0 and 100'}), 400
             
@@ -646,11 +681,11 @@ def update_project_team(project_id):
             if alloc_data.get('end_date'):
                 end_date = datetime.strptime(alloc_data['end_date'], '%Y-%m-%d').date()
             
-            # Validate total allocation percentage doesn't exceed 100%
+            # Validate total internal allocation percentage doesn't exceed 100%
             is_valid, error_msg = validate_allocation_percentage(
                 session, 
                 employee_id, 
-                allocation_percentage, 
+                internal_allocation_percentage,  # Use internal_allocation_percentage for validation
                 start_date, 
                 end_date,
                 exclude_allocation_id=allocation_id  # Exclude current allocation if updating
@@ -668,22 +703,64 @@ def update_project_team(project_id):
                 if not allocation:
                     return jsonify({'error': f'Allocation {allocation_id} not found'}), 404
                 
+                # Handle is_trainee FIRST before setting other fields to avoid validation issues
+                # Explicitly handle None, False, and string values
+                is_trainee = alloc_data.get('is_trainee')
+                if is_trainee is None:
+                    is_trainee = False
+                elif isinstance(is_trainee, str):
+                    is_trainee = is_trainee.lower() in ('true', '1', 'yes')
+                else:
+                    is_trainee = bool(is_trainee)
+                allocation.is_trainee = is_trainee
+                
+                if is_trainee:
+                    mentoring_primary_emp_id = alloc_data.get('mentoring_primary_emp_id')
+                    if mentoring_primary_emp_id:
+                        allocation.mentoring_primary_emp_id = int(mentoring_primary_emp_id)
+                    elif not allocation.mentoring_primary_emp_id:
+                        return jsonify({'error': 'mentoring_primary_emp_id is required when is_trainee is True'}), 400
+                else:
+                    allocation.mentoring_primary_emp_id = None
+                
+                # Now set other fields after is_trainee is set
                 allocation.start_date = start_date
                 allocation.end_date = end_date
                 allocation.allocation_percentage = allocation_percentage
+                allocation.internal_allocation_percentage = internal_allocation_percentage
                 allocation.billable_percentage = billable_percentage
+                
                 if 'billing_rate' in alloc_data:
                     allocation.billing_rate = float(alloc_data['billing_rate']) if alloc_data['billing_rate'] else None
             else:
                 # Create new allocation
+                # Explicitly handle None, False, and string values
+                is_trainee = alloc_data.get('is_trainee')
+                if is_trainee is None:
+                    is_trainee = False
+                elif isinstance(is_trainee, str):
+                    is_trainee = is_trainee.lower() in ('true', '1', 'yes')
+                else:
+                    is_trainee = bool(is_trainee)
+                
+                mentoring_primary_emp_id = None
+                if is_trainee:
+                    mentoring_primary_emp_id = alloc_data.get('mentoring_primary_emp_id')
+                    if not mentoring_primary_emp_id:
+                        return jsonify({'error': 'mentoring_primary_emp_id is required when is_trainee is True'}), 400
+                    mentoring_primary_emp_id = int(mentoring_primary_emp_id)
+                
                 allocation = Allocation(
                     emp_id=employee_id,
                     proj_id=project_id,
                     start_date=start_date,
                     end_date=end_date,
                     allocation_percentage=allocation_percentage,
+                    internal_allocation_percentage=internal_allocation_percentage,
                     billable_percentage=billable_percentage,
                     billing_rate=float(alloc_data['billing_rate']) if alloc_data.get('billing_rate') else None,
+                    is_trainee=is_trainee,
+                    mentoring_primary_emp_id=mentoring_primary_emp_id,
                     is_revealed=False
                 )
                 session.add(allocation)
@@ -692,6 +769,7 @@ def update_project_team(project_id):
                 'id': allocation.id if allocation_id else None,  # Will be set after commit
                 'employee_id': employee_id,
                 'allocation_percentage': allocation_percentage,
+                'internal_allocation_percentage': internal_allocation_percentage,
                 'billable_percentage': billable_percentage
             })
         

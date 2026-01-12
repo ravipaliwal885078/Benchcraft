@@ -6,14 +6,14 @@ from datetime import date
 from models import Allocation, Employee
 
 
-def validate_allocation_percentage(session, employee_id, new_allocation_percentage, start_date, end_date, exclude_allocation_id=None):
+def validate_allocation_percentage(session, employee_id, internal_allocation_percentage, start_date, end_date, exclude_allocation_id=None):
     """
-    Validate that adding/updating an allocation won't cause total allocation_percentage to exceed 100%
+    Validate that adding/updating an allocation won't cause total internal_allocation_percentage to exceed 100%
     
     Args:
         session: SQLAlchemy session
         employee_id: ID of the employee
-        new_allocation_percentage: The allocation percentage being added/updated (0-100)
+        internal_allocation_percentage: The internal allocation percentage being added/updated (0-100)
         start_date: Start date of the new/updated allocation
         end_date: End date of the new/updated allocation (None for ongoing)
         exclude_allocation_id: ID of allocation to exclude (for updates)
@@ -47,34 +47,37 @@ def validate_allocation_percentage(session, employee_id, new_allocation_percenta
             if alloc_start <= new_end and start_date <= alloc_end:
                 overlapping_allocations.append(alloc)
         
-        # Sum up allocation_percentage from overlapping allocations
+        # Sum up internal_allocation_percentage from overlapping allocations
         total_allocation = 0
         for alloc in overlapping_allocations:
             try:
-                # Try to get allocation_percentage (new field)
-                alloc_pct = getattr(alloc, 'allocation_percentage', None)
+                # Try to get internal_allocation_percentage (primary field for validation)
+                alloc_pct = getattr(alloc, 'internal_allocation_percentage', None)
                 if alloc_pct is None:
-                    # Fallback to utilization if allocation_percentage doesn't exist
-                    alloc_pct = getattr(alloc, 'utilization', 100) or 100
+                    # Fallback to allocation_percentage if internal_allocation_percentage doesn't exist
+                    alloc_pct = getattr(alloc, 'allocation_percentage', None)
+                    if alloc_pct is None:
+                        # Fallback to utilization if allocation_percentage doesn't exist
+                        alloc_pct = getattr(alloc, 'utilization', 100) or 100
                 total_allocation += alloc_pct
             except (AttributeError, TypeError):
                 # If field doesn't exist, assume 100%
                 total_allocation += 100
         
-        # If new allocation percentage is 0%, it doesn't count towards total allocation
+        # If new internal allocation percentage is 0%, it doesn't count towards total allocation
         # (0% means not allocated, so it's always valid)
-        if new_allocation_percentage == 0:
+        if internal_allocation_percentage == 0:
             return True, None
         
-        # Add the new allocation percentage
-        total_allocation += new_allocation_percentage
+        # Add the new internal allocation percentage
+        total_allocation += internal_allocation_percentage
         
         # Check if total exceeds 100%
         if total_allocation > 100:
             employee = session.query(Employee).filter(Employee.id == employee_id).first()
             employee_name = f"{employee.first_name} {employee.last_name}" if employee else f"Employee {employee_id}"
-            current_total = total_allocation - new_allocation_percentage
-            return False, f"Total allocation for {employee_name} would be {total_allocation}%. Maximum allowed is 100%. Current overlapping allocations total {current_total}%."
+            current_total = total_allocation - internal_allocation_percentage
+            return False, f"Total internal allocation for {employee_name} would be {total_allocation}%. Maximum allowed is 100%. Current overlapping allocations total {current_total}%."
         
         return True, None
     

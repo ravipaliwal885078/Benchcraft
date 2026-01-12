@@ -26,30 +26,34 @@ from config import Config
 from tools.vector_db import ChromaSearchTool
 from tools.sql_db import SQLDatabaseTool
 
-# Sample data
-FIRST_NAMES = ["Alex", "Jordan", "Taylor", "Morgan", "Casey", "Riley", "Avery", "Quinn", "Sage", "River",
-               "Blake", "Cameron", "Dakota", "Emery", "Finley", "Harper", "Hayden", "Jamie", "Kai", "Logan"]
+# Sample data - Indian subcontinent names
+FIRST_NAMES = ["Rajesh", "Priya", "Amit", "Kavita", "Rahul", "Anjali", "Vikram", "Sneha", "Arjun", "Divya",
+               "Suresh", "Meera", "Karan", "Pooja", "Rohan", "Neha", "Aditya", "Shreya", "Nikhil", "Ananya"]
 
-LAST_NAMES = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez",
-              "Hernandez", "Lopez", "Wilson", "Anderson", "Thomas", "Taylor", "Moore", "Jackson", "Martin", "Lee"]
+LAST_NAMES = ["Kumar", "Sharma", "Patel", "Singh", "Reddy", "Gupta", "Verma", "Mehta", "Jain", "Agarwal",
+              "Malhotra", "Kapoor", "Chopra", "Bansal", "Shah", "Joshi", "Desai", "Iyer", "Nair", "Rao"]
 
 SKILLS = ["Python", "Java", "JavaScript", "React", "Node.js", "AWS", "Azure", "Docker", "Kubernetes", "SQL",
           "MongoDB", "PostgreSQL", "Machine Learning", "Data Science", "DevOps", "CI/CD", "Agile", "Scrum",
           "Microservices", "REST API", "GraphQL", "TypeScript", "Angular", "Vue.js", "Spring Boot", "Django",
           "Flask", "FastAPI", "TensorFlow", "PyTorch"]
 
-LOCATIONS = ["New York", "London", "San Francisco", "Amsterdam", "Bangalore", "Singapore", "Toronto", "Sydney"]
+LOCATIONS = ["Bangalore", "Hyderabad", "Pune", "Mumbai", "Chennai", "Delhi", "Gurgaon", "Noida", "Kolkata", "Ahmedabad"]
 
-CLIENTS = ["Acme Corp", "TechGlobal", "FinanceFirst", "HealthTech Solutions", "RetailMax", "AeroSystems", "KLM Airlines"]
+CLIENTS = ["HDFC Bank", "ICICI Bank", "Reliance Industries", "Tata Consultancy Services", "Infosys", "Wipro", "Tech Mahindra", 
+          "Axis Bank", "State Bank of India", "Bharti Airtel", "Adani Group", "Mahindra & Mahindra", "L&T", "HCL Technologies"]
 
 PROJECT_DESCRIPTIONS = [
-    "Senior Python developer needed for FinTech platform. Experience with microservices, AWS, and real-time payment processing required.",
-    "Full-stack JavaScript developer for e-commerce platform. React, Node.js, and MongoDB expertise essential.",
-    "Cloud architect for enterprise migration to Azure. Kubernetes and containerization experience required.",
-    "Data scientist for machine learning project. Python, TensorFlow, and experience with large datasets.",
-    "DevOps engineer for CI/CD pipeline automation. Docker, Kubernetes, and infrastructure as code experience needed.",
-    "Aviation industry expert for airline management system. Experience with legacy systems and modern cloud architecture.",
-    "Healthcare technology specialist for patient management platform. HIPAA compliance and security expertise required."
+    "Senior Python developer needed for digital banking platform. Experience with microservices, AWS, and real-time payment processing using UPI/NEFT/RTGS required. Knowledge of Indian banking regulations and compliance standards essential.",
+    "Full-stack JavaScript developer for e-commerce platform targeting Indian market. React, Node.js, and MongoDB expertise essential. Experience with payment gateways like Razorpay, Paytm integration preferred.",
+    "Cloud architect for enterprise migration to Azure. Kubernetes and containerization experience required. Experience with Indian data localization requirements and compliance standards.",
+    "Data scientist for machine learning project in financial services domain. Python, TensorFlow, and experience with large datasets. Knowledge of Indian financial markets and regulations preferred.",
+    "DevOps engineer for CI/CD pipeline automation. Docker, Kubernetes, and infrastructure as code experience needed. Experience with Indian cloud infrastructure providers preferred.",
+    "Healthcare technology specialist for patient management platform. Experience with Indian healthcare regulations, Aadhaar integration, and hospital management systems required.",
+    "Telecom domain expert for 5G network implementation project. Experience with Indian telecom regulations, TRAI compliance, and network infrastructure required.",
+    "Retail technology specialist for omnichannel retail platform. Experience with Indian retail market, inventory management, and supply chain systems essential.",
+    "FinTech specialist for digital lending platform. Experience with NBFC regulations, credit scoring, and loan management systems required.",
+    "Education technology expert for online learning platform. Experience with Indian education system, curriculum management, and student assessment tools required."
 ]
 
 # Domain data
@@ -120,15 +124,15 @@ def seed_database():
             # Generate bio
             bio = generate_bio(role_level, employee_skills)
             
-            # Calculate CTC based on role level
+            # Calculate CTC based on role level (Indian market rates in INR)
             ctc_base = {
-                RoleLevel.JR: 5000,
-                RoleLevel.MID: 8000,
-                RoleLevel.SR: 12000,
-                RoleLevel.LEAD: 15000,
-                RoleLevel.PRINCIPAL: 20000
+                RoleLevel.JR: 40000,      # ~$500/month in INR
+                RoleLevel.MID: 80000,      # ~$1000/month in INR
+                RoleLevel.SR: 150000,     # ~$1800/month in INR
+                RoleLevel.LEAD: 250000,   # ~$3000/month in INR
+                RoleLevel.PRINCIPAL: 400000  # ~$4800/month in INR
             }
-            ctc_monthly = ctc_base[role_level] + random.randint(-500, 2000)
+            ctc_monthly = ctc_base[role_level] + random.randint(-10000, 50000)
             
             employee = Employee(
                 first_name=first_name,
@@ -136,9 +140,9 @@ def seed_database():
                 email=email,  # Use unique email
                 role_level=role_level.value,  # Store enum value as string
                 ctc_monthly=ctc_monthly,
-                currency="USD",
+                currency="INR",  # Indian Rupees
                 base_location=random.choice(LOCATIONS),
-                visa_status=random.choice(["Citizen", "H1B", "Green Card", "Work Permit"]),
+                visa_status=random.choice(["Indian Citizen", "OCI", "Work Visa", "H1B"]),
                 remote_pref=random.choice([True, False]),
                 status=random.choice([EmployeeStatus.BENCH, EmployeeStatus.ALLOCATED]),
                 joined_date=date.today() - timedelta(days=random.randint(30, 1000)),
@@ -186,7 +190,7 @@ def seed_database():
         projects = []
         industry_domains = ["FinTech", "Healthcare", "Retail", "Manufacturing", "Telecom", "Education", "Other"]
         project_types = list(ProjectType)
-        currencies = ["INR", "USD", "EUR"]
+        currencies = ["INR", "USD"]  # Primarily INR for Indian market
         statuses = [ProjectStatus.PIPELINE, ProjectStatus.ACTIVE, ProjectStatus.ON_HOLD, ProjectStatus.CLOSED]
         
         for i in range(5):
@@ -203,19 +207,24 @@ def seed_database():
             # Select random industry domain based on client/project type
             industry_domain = random.choice(industry_domains)
             # Match industry domain to client if possible
-            if "Finance" in client or "FinTech" in description:
+            if "Bank" in client or "Finance" in client or "FinTech" in description:
                 industry_domain = "FinTech"
             elif "Health" in client or "Healthcare" in description:
                 industry_domain = "Healthcare"
             elif "Retail" in client or "e-commerce" in description.lower():
                 industry_domain = "Retail"
+            elif "Airtel" in client or "Telecom" in description:
+                industry_domain = "Telecom"
+            
+            # Budget in INR (Indian market)
+            budget_cap = random.randint(5000000, 20000000)  # 50L to 2Cr INR
             
             project = Project(
                 client_name=client,
-                project_name=f"{client} Platform",
+                project_name=f"{client} Digital Platform",
                 description=description,
-                budget_cap=random.randint(50000, 200000),
-                billing_currency=random.choice(currencies),
+                budget_cap=budget_cap,
+                billing_currency=random.choice(currencies),  # Primarily INR
                 project_type=random.choice(project_types),
                 industry_domain=industry_domain,
                 start_date=date.today() + timedelta(days=random.randint(-30, 30)),
@@ -261,12 +270,12 @@ def seed_database():
             hourly_cost = employee.ctc_monthly / 160.0  # Assuming 160 working hours/month
             base_rate = hourly_cost * random.uniform(2.0, 3.0)  # 50-66% margin
             
-            # Create base rate card
+            # Create base rate card (in INR)
             base_rate_card = RateCard(
                 emp_id=employee.id,
                 domain_id=None,  # Base rate
                 hourly_rate=round(base_rate, 2),
-                currency="USD",
+                currency="INR",  # Indian Rupees
                 effective_date=date.today() - timedelta(days=30),
                 expiry_date=None,
                 rate_type=RateType.BASE,
@@ -276,7 +285,7 @@ def seed_database():
             session.flush()
             rate_cards_map[employee.id] = base_rate_card.id
             
-            # Create 1-2 domain-specific rate cards (higher rates)
+            # Create 1-2 domain-specific rate cards (higher rates in INR)
             employee_domains = session.query(EmployeeDomain).filter(EmployeeDomain.emp_id == employee.id).all()
             if employee_domains:
                 selected_domains = random.sample(employee_domains, min(2, len(employee_domains)))
@@ -286,7 +295,7 @@ def seed_database():
                         emp_id=employee.id,
                         domain_id=emp_domain.domain_id,
                         hourly_rate=round(domain_rate, 2),
-                        currency="USD",
+                        currency="INR",  # Indian Rupees
                         effective_date=date.today() - timedelta(days=20),
                         expiry_date=None,
                         rate_type=RateType.DOMAIN_SPECIFIC,
@@ -330,41 +339,89 @@ def seed_database():
                 if allocation_pct == 100 and random.random() < 0.1:  # 10% chance
                     billable_pct = 50
                 
+                # Internal allocation percentage (actual work vs client-reported)
+                # Default: same as allocation_percentage (1:1)
+                # Sometimes create over-billing scenario (internal < allocation) or under-billing (internal > allocation)
+                if random.random() < 0.2:  # 20% chance of different internal vs client allocation
+                    if random.random() < 0.5:  # Over-billing: work less, bill more
+                        internal_pct = max(10, allocation_pct - random.randint(10, 30))
+                    else:  # Under-billing: work more, bill less
+                        internal_pct = min(100, allocation_pct + random.randint(10, 30))
+                else:
+                    internal_pct = allocation_pct  # Default: 1:1
+                
+                # Determine if this is a trainee (5% chance)
+                is_trainee = random.random() < 0.05
+                mentoring_primary_emp_id = None
+                
+                # If trainee, find a primary resource on the same project to shadow
+                if is_trainee:
+                    # Find existing primary allocations on this project
+                    primary_allocations = session.query(Allocation).filter(
+                        Allocation.proj_id == project.id,
+                        Allocation.is_trainee == False,
+                        Allocation.emp_id != employee.id
+                    ).all()
+                    
+                    if primary_allocations:
+                        mentoring_primary_emp_id = random.choice(primary_allocations).emp_id
+                        # Trainees are never billable
+                        billable_pct = 0
+                        allocation_pct = 0  # Not reported to client
+                        internal_pct = 100  # Trainees work 100% internally (full time training)
+                        billing_rate = 0  # No billing for trainees
+                        # Still use rate_card_id for cost calculation (base rate)
+                    else:
+                        # No primary resource available, make this a regular allocation
+                        is_trainee = False
+                
                 allocation = Allocation(
                     emp_id=employee.id,
                     proj_id=project.id,
                     start_date=alloc_start,
                     end_date=alloc_end,
-                    billing_rate=billing_rate,
-                    is_revealed=random.choice([True, False]),
+                    billing_rate=billing_rate if not is_trainee else 0,
+                    is_revealed=random.choice([True, False]) if not is_trainee else False,
                     allocation_percentage=allocation_pct,
                     billable_percentage=billable_pct,
-                    rate_card_id=rate_card_id
+                    internal_allocation_percentage=internal_pct,
+                    is_trainee=is_trainee,
+                    mentoring_primary_emp_id=mentoring_primary_emp_id,
+                    rate_card_id=rate_card_id  # Use base rate card even for trainees (for cost calculation)
                 )
                 session.add(allocation)
                 session.flush()  # Flush to get allocation.id
                 
                 # Create AllocationFinancial for each allocation
-                if billing_rate and rate_card_id:
-                    # Calculate financial metrics
+                if (billing_rate and rate_card_id) or is_trainee:
+                    # Calculate financial metrics using new formulas
                     total_hours = 160  # Monthly hours
-                    utilized_hours = int((total_hours * allocation_pct) / 100)
-                    billed_hours = int((total_hours * allocation_pct * billable_pct) / 10000)
+                    
+                    if is_trainee:
+                        # Trainees: no revenue, cost based on internal allocation
+                        billed_hours = 0
+                        cost_hours = int((total_hours * internal_pct) / 100)
+                        estimated_revenue = 0.0
+                    else:
+                        # Primary resources: revenue based on allocation_percentage, cost based on internal_allocation_percentage
+                        billed_hours = int((total_hours * allocation_pct * billable_pct) / 10000)
+                        cost_hours = int((total_hours * internal_pct) / 100)
+                        estimated_revenue = billing_rate * billed_hours if billing_rate else 0.0
+                    
                     cost_rate = employee.ctc_monthly / 160.0
-                    estimated_revenue = billing_rate * billed_hours
-                    estimated_cost = cost_rate * utilized_hours
+                    estimated_cost = cost_rate * cost_hours
                     gross_margin = ((estimated_revenue - estimated_cost) / estimated_revenue * 100) if estimated_revenue > 0 else 0
                     
                     alloc_financial = AllocationFinancial(
                         allocation_id=allocation.id,
-                        rate_card_id=rate_card_id,
-                        billing_rate=billing_rate,
+                        rate_card_id=rate_card_id,  # Always use rate card (base rate for cost calculation)
+                        billing_rate=billing_rate if not is_trainee else 0,
                         cost_rate=round(cost_rate, 2),
                         gross_margin_percentage=round(gross_margin, 2),
                         estimated_revenue=round(estimated_revenue, 2),
                         estimated_cost=round(estimated_cost, 2),
                         billed_hours=billed_hours,
-                        utilized_hours=utilized_hours,
+                        utilized_hours=cost_hours,  # Use cost_hours (based on internal allocation)
                         total_hours_in_period=total_hours
                     )
                     session.add(alloc_financial)
@@ -498,7 +555,7 @@ def seed_database():
             )
             session.add(bench_entry)
         
-        # Create financial metrics
+        # Create financial metrics (in INR)
         print("\nCreating financial metrics...")
         # Company-wide metrics
         company_metrics = FinancialMetrics(
@@ -506,8 +563,8 @@ def seed_database():
             proj_id=None,
             target_gross_margin_percentage=50.0,
             actual_gross_margin_percentage=random.uniform(45.0, 55.0),
-            total_revenue=random.uniform(500000, 2000000),
-            total_cost=random.uniform(250000, 1000000),
+            total_revenue=random.uniform(50000000, 200000000),  # 5Cr to 20Cr INR
+            total_cost=random.uniform(25000000, 100000000),  # 2.5Cr to 10Cr INR
             gross_profit=0.0,  # Will be calculated
             period_start_date=date.today().replace(day=1),
             period_end_date=date.today(),
@@ -516,15 +573,15 @@ def seed_database():
         company_metrics.gross_profit = company_metrics.total_revenue - company_metrics.total_cost
         session.add(company_metrics)
         
-        # Project-specific metrics
+        # Project-specific metrics (in INR)
         for project in active_projects[:2] if active_projects else []:
             project_metrics = FinancialMetrics(
                 emp_id=None,
                 proj_id=project.id,
                 target_gross_margin_percentage=50.0,
                 actual_gross_margin_percentage=random.uniform(40.0, 60.0),
-                total_revenue=random.uniform(50000, 200000),
-                total_cost=random.uniform(25000, 100000),
+                total_revenue=random.uniform(5000000, 20000000),  # 50L to 2Cr INR
+                total_cost=random.uniform(2500000, 10000000),  # 25L to 1Cr INR
                 gross_profit=0.0,
                 period_start_date=project.start_date,
                 period_end_date=date.today(),

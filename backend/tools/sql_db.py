@@ -69,16 +69,18 @@ class SQLDatabaseTool:
         finally:
             session.close()
     
-    def create_allocation(self, emp_id: int, proj_id: int, start_date, end_date=None, billing_rate=None, allocation_percentage=100, billable_percentage=100):
+    def create_allocation(self, emp_id: int, proj_id: int, start_date, end_date=None, billing_rate=None, allocation_percentage=100, internal_allocation_percentage=None, billable_percentage=100):
         """Create new allocation and update employee status atomically"""
         session = self.Session()
         try:
-            # Validate allocation percentage doesn't exceed 100%
+            # Use internal_allocation_percentage if provided, otherwise use allocation_percentage
+            internal_alloc = internal_allocation_percentage if internal_allocation_percentage is not None else allocation_percentage
+            # Validate internal allocation percentage doesn't exceed 100%
             from utils.allocation_validator import validate_allocation_percentage
             is_valid, error_msg = validate_allocation_percentage(
                 session,
                 emp_id,
-                allocation_percentage,
+                internal_alloc,  # Use internal_allocation_percentage for validation
                 start_date,
                 end_date
             )
@@ -92,6 +94,7 @@ class SQLDatabaseTool:
                 end_date=end_date,
                 billing_rate=billing_rate,
                 allocation_percentage=allocation_percentage,
+                internal_allocation_percentage=internal_alloc,
                 billable_percentage=billable_percentage,
                 is_revealed=False
             )

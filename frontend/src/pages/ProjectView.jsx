@@ -5,6 +5,7 @@ import {
   Building, Calendar, DollarSign, Users, TrendingUp,
   Star, MessageSquare, Target, Clock, Briefcase, X, Plus, Edit
 } from 'lucide-react'
+import ManageTeamModal from '../components/ManageTeamModal'
 
 const ProjectView = () => {
   const { id } = useParams()
@@ -33,13 +34,12 @@ const ProjectView = () => {
     start_date: '',
     end_date: '',
     allocation_percentage: 100,
+    internal_allocation_percentage: 100,
     billable_percentage: 100,
     billing_rate: ''
   })
   const [memberValidationError, setMemberValidationError] = useState(null)
   const [showTeamModal, setShowTeamModal] = useState(false)
-  const [teamMembers, setTeamMembers] = useState([])
-  const [validationErrors, setValidationErrors] = useState({})
   const [showPastAllocations, setShowPastAllocations] = useState(false)
 
   useEffect(() => {
@@ -93,6 +93,7 @@ const ProjectView = () => {
       start_date: member.start_date || '',
       end_date: member.end_date || '',
       allocation_percentage: member.allocation_percentage || member.utilization || 100,
+      internal_allocation_percentage: member.internal_allocation_percentage || member.allocation_percentage || member.utilization || 100,
       billable_percentage: member.billable_percentage || 100,
       billing_rate: member.billing_rate || ''
     })
@@ -126,9 +127,11 @@ const ProjectView = () => {
       return true
     }
 
+    // Use internal_allocation_percentage for validation
+    const internalAllocationPercentage = parseInt(memberForm.internal_allocation_percentage) || allocationPercentage
     try {
       const checkResult = await checkEmployeeAllocation(selectedMember.employee_id, {
-        allocation_percentage: allocationPercentage,
+        internal_allocation_percentage: internalAllocationPercentage,
         start_date: startDate,
         end_date: endDate,
         exclude_allocation_id: selectedMember.id
@@ -164,6 +167,7 @@ const ProjectView = () => {
         start_date: memberForm.start_date,
         end_date: memberForm.end_date || null,
         allocation_percentage: parseInt(memberForm.allocation_percentage) || 100,
+        internal_allocation_percentage: parseInt(memberForm.internal_allocation_percentage) || parseInt(memberForm.allocation_percentage) || 100,
         billable_percentage: parseInt(memberForm.billable_percentage) || 100,
         billing_rate: memberForm.billing_rate ? parseFloat(memberForm.billing_rate) : null
       }]
@@ -179,31 +183,8 @@ const ProjectView = () => {
     }
   }
 
-  const openTeamModal = async () => {
-    try {
-      // Load project details with team
-      const projectData = await getProject(id)
-      const allTeamMembers = projectData.team || []
-      
-      // Filter out past resources (end_date < today)
-      const today = getTodayDate()
-      const activeTeamMembers = allTeamMembers.filter(member => {
-        // Keep members with no end_date (ongoing) or end_date > today (future only)
-        // Exclude members with end_date <= today (past or ending today)
-        return !member.end_date || member.end_date > today
-      })
-      
-      setTeamMembers(activeTeamMembers)
-      
-      // Load available employees
-      const employeesData = await getEmployees()
-      setAvailableEmployees(employeesData.employees || [])
-      
-      setShowTeamModal(true)
-    } catch (error) {
-      console.error('Failed to load project team:', error)
-      alert('Failed to load project team: ' + error.message)
-    }
+  const openTeamModal = () => {
+    setShowTeamModal(true)
   }
 
   const handleTeamUpdate = async () => {
@@ -222,7 +203,8 @@ const ProjectView = () => {
           continue
         }
 
-        const allocationPercentage = parseInt(member.allocation_percentage) || 0
+        // Use internal_allocation_percentage for validation (primary field)
+        const internalAllocationPercentage = parseInt(member.internal_allocation_percentage !== undefined ? member.internal_allocation_percentage : member.allocation_percentage) || 0
         const startDate = member.start_date || getTodayDate()
         const endDate = member.end_date || null
 
@@ -233,29 +215,29 @@ const ProjectView = () => {
           continue
         }
 
-        // Validate range
-        if (allocationPercentage < 0 || allocationPercentage > 100) {
-          errors[i] = { message: 'Allocation percentage must be between 0 and 100%', isValidating: false }
+        // Validate range for internal allocation percentage
+        if (internalAllocationPercentage < 0 || internalAllocationPercentage > 100) {
+          errors[i] = { message: 'Internal allocation percentage must be between 0 and 100%', isValidating: false }
           hasErrors = true
           continue
         }
 
-        // If allocation percentage is 0%, skip backend validation (0% is always valid)
-        if (allocationPercentage === 0) {
-          continue // Skip backend check for 0% allocation
+        // If internal allocation percentage is 0%, skip backend validation (0% is always valid)
+        if (internalAllocationPercentage === 0) {
+          continue // Skip backend check for 0% internal allocation
         }
 
-        // Check with backend
+        // Check with backend using internal_allocation_percentage
         try {
           const checkResult = await checkEmployeeAllocation(member.employee_id, {
-            allocation_percentage: allocationPercentage,
+            internal_allocation_percentage: internalAllocationPercentage,
             start_date: startDate,
             end_date: endDate,
             exclude_allocation_id: member.id || null
           })
 
           if (!checkResult.is_valid) {
-            errors[i] = { message: checkResult.error_message || `Total allocation would be ${checkResult.would_be_total}%. Maximum allowed is 100%.`, isValidating: false }
+            errors[i] = { message: checkResult.error_message || `Total internal allocation would be ${checkResult.would_be_total}%. Maximum allowed is 100%.`, isValidating: false }
             hasErrors = true
           }
         } catch (checkError) {
@@ -280,8 +262,11 @@ const ProjectView = () => {
         start_date: member.start_date || new Date().toISOString().split('T')[0],
         end_date: member.end_date || null,
         allocation_percentage: parseInt(member.allocation_percentage) || 100,
+        internal_allocation_percentage: parseInt(member.internal_allocation_percentage) || parseInt(member.allocation_percentage) || 100,
         billable_percentage: parseInt(member.billable_percentage) || 100,
-        billing_rate: member.billing_rate || null
+        billing_rate: member.billing_rate || null,
+        is_trainee: member.is_trainee || false,
+        mentoring_primary_emp_id: member.is_trainee ? (member.mentoring_primary_emp_id || null) : null
       }))
       
       await updateProjectTeam(id, allocations)
@@ -330,8 +315,11 @@ const ProjectView = () => {
       start_date: getTodayDate(),
       end_date: '',
       allocation_percentage: 100,
+      internal_allocation_percentage: 100,
       billable_percentage: 100,
-      billing_rate: null
+      billing_rate: null,
+      is_trainee: false,
+      mentoring_primary_emp_id: null
     }])
   }
 
@@ -399,18 +387,20 @@ const ProjectView = () => {
       return // Skip if employee or start date not selected
     }
 
-    const allocationPercentage = parseInt(member.allocation_percentage) || 0
+    // Use internal_allocation_percentage for validation (primary field)
+    const internalAllocationPercentage = parseInt(member.internal_allocation_percentage !== undefined ? member.internal_allocation_percentage : member.allocation_percentage) || 0
     
-    // If allocation percentage is 0%, it doesn't count towards total allocation
+    // If internal allocation percentage is 0%, it doesn't count towards total allocation
     // (0% means not allocated, so it's always valid - clear any existing errors)
-    if (allocationPercentage === 0) {
+    if (internalAllocationPercentage === 0) {
       setValidationErrors(prev => {
         const newErrors = { ...prev }
         // Only clear allocation-related errors, keep date validation errors
         if (newErrors[index] && (
           newErrors[index].message.includes('allocated') ||
           newErrors[index].message.includes('exceed') ||
-          newErrors[index].message.includes('Total allocation')
+          newErrors[index].message.includes('Total allocation') ||
+          newErrors[index].message.includes('internal allocation')
         )) {
           delete newErrors[index]
         }
@@ -429,19 +419,19 @@ const ProjectView = () => {
       const startDate = member.start_date
       const endDate = member.end_date || null
 
-      // Check with backend for overlapping allocations
+      // Check with backend for overlapping allocations using internal_allocation_percentage
       const checkResult = await checkEmployeeAllocation(member.employee_id, {
-        allocation_percentage: allocationPercentage,
+        internal_allocation_percentage: internalAllocationPercentage,
         start_date: startDate,
         end_date: endDate,
         exclude_allocation_id: member.id || null
       })
 
       if (!checkResult.is_valid) {
-        // Check if the issue is due to 100% allocation overlap
+        // Check if the issue is due to 100% internal allocation overlap
         if (checkResult.would_be_total > 100) {
           const errorMsg = checkResult.error_message || 
-            `Resource is already ${checkResult.current_total}% allocated in this date range. Adding ${allocationPercentage}% would exceed 100%.`
+            `Resource is already ${checkResult.current_total}% internally allocated in this date range. Adding ${internalAllocationPercentage}% would exceed 100%.`
           
           setValidationErrors(prev => ({
             ...prev,
@@ -1152,10 +1142,10 @@ const ProjectView = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Allocation % *
+                    Allocation % (Client) *
                   </label>
                   <input
                     type="number"
@@ -1171,6 +1161,22 @@ const ProjectView = () => {
                     className={`w-full border rounded-md px-3 py-2 ${
                       memberValidationError ? 'border-red-500 bg-red-50' : 'border-gray-300'
                     }`}
+                    title="Allocation percentage reported to client"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Internal Allocation % *
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    required
+                    value={memberForm.internal_allocation_percentage}
+                    onChange={(e) => setMemberForm({ ...memberForm, internal_allocation_percentage: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    title="Actual internal allocation percentage (for cost calculation)"
                   />
                 </div>
                 <div>
@@ -1239,274 +1245,13 @@ const ProjectView = () => {
       )}
 
       {/* Manage Team Modal */}
-      {showTeamModal && project && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-gray-900">
-                Manage Team - {proj.project_name}
-              </h2>
-              <button
-                onClick={() => {
-                  setShowTeamModal(false)
-                  setTeamMembers([])
-                  setValidationErrors({})
-                }}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-
-            <div className="mb-4">
-              <button
-                onClick={handleAddTeamMember}
-                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 flex items-center space-x-2"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add Team Member</span>
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Employee
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Start Date
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      End Date
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Allocation %
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Billable %
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Billing Rate
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {teamMembers.map((member, index) => {
-                    const employee = availableEmployees.find(e => e.id === member.employee_id)
-                    const hasError = validationErrors[index] && !validationErrors[index].isValidating
-                    const errorMessage = validationErrors[index]?.message || ''
-                    const isStartDateError = errorMessage.includes('Start date')
-                    const isEndDateError = errorMessage.includes('End date')
-                    const isAllocationError = hasError && !isStartDateError && !isEndDateError
-                    
-                    return (
-                      <>
-                        <tr key={member.id || index}>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {member.id ? (
-                            <div>
-                              <div className="text-sm font-medium text-gray-900">
-                                {member.first_name} {member.last_name}
-                              </div>
-                              <div className="text-sm text-gray-500">{member.role_level}</div>
-                            </div>
-                          ) : (
-                            <select
-                              value={member.employee_id}
-                              onChange={(e) => handleTeamMemberChange(index, 'employee_id', parseInt(e.target.value))}
-                              className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm"
-                            >
-                              <option value="">Select Employee</option>
-                              {availableEmployees.map(emp => (
-                                <option key={emp.id} value={emp.id}>
-                                  {emp.first_name} {emp.last_name} ({emp.role_level})
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="flex flex-col">
-                            <input
-                              type="date"
-                              value={member.start_date || ''}
-                              onChange={(e) => handleTeamMemberChange(index, 'start_date', e.target.value)}
-                              onBlur={() => validateTeamMemberDates(index, member)}
-                              className="w-full border rounded-md px-2 py-1 text-sm border-gray-300"
-                            />
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="flex flex-col">
-                            <input
-                              type="date"
-                              value={member.end_date || ''}
-                              min={member.start_date || getTodayDate()}
-                              onChange={(e) => handleTeamMemberChange(index, 'end_date', e.target.value)}
-                              onBlur={() => validateTeamMemberDates(index, member)}
-                              className={`w-full border rounded-md px-2 py-1 text-sm ${
-                                validationErrors[index] && validationErrors[index].message.includes('End date')
-                                  ? 'border-red-500 bg-red-50'
-                                  : (() => {
-                                      const today = getTodayDate()
-                                      return member.end_date === today && member.id ? 'border-orange-500 bg-orange-50' : 'border-gray-300'
-                                    })()
-                              }`}
-                            />
-                            {validationErrors[index] && validationErrors[index].message.includes('End date') && !validationErrors[index].isValidating && (
-                              <div className="mt-1 text-xs text-red-600 whitespace-normal break-words max-w-48">
-                                {validationErrors[index].message}
-                              </div>
-                            )}
-                            {(() => {
-                              const today = getTodayDate()
-                              if (member.end_date === today && member.id) {
-                                return (
-                                  <div className="mt-1 text-xs text-orange-600">
-                                    Will be removed when saved
-                                  </div>
-                                )
-                              }
-                              return null
-                            })()}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="flex flex-col">
-                            <input
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={member.allocation_percentage || 100}
-                              onChange={(e) => handleTeamMemberChange(index, 'allocation_percentage', e.target.value)}
-                              onBlur={() => validateTeamMember(index)}
-                              className={`w-full border rounded-md px-2 py-1 text-sm w-20 ${
-                                validationErrors[index] && (
-                                  validationErrors[index].message.includes('Allocation percentage') ||
-                                  (validationErrors[index].message.includes('allocated') ||
-                                   validationErrors[index].message.includes('exceed') ||
-                                   validationErrors[index].message.includes('Total allocation'))
-                                ) && !validationErrors[index].isValidating
-                                  ? 'border-red-500 bg-red-50' 
-                                  : 'border-gray-300'
-                              }`}
-                            />
-                            {validationErrors[index] && validationErrors[index].message.includes('Allocation percentage') && !validationErrors[index].isValidating && (
-                              <div className="mt-1 text-xs text-red-600 whitespace-normal break-words max-w-48">
-                                {validationErrors[index].message}
-                              </div>
-                            )}
-                            {validationErrors[index] && validationErrors[index].isValidating && (
-                              <div className="mt-1 text-xs text-blue-600">
-                                {validationErrors[index].message}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={member.billable_percentage || 100}
-                            onChange={(e) => handleTeamMemberChange(index, 'billable_percentage', e.target.value)}
-                            className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm w-20"
-                          />
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={member.billing_rate || ''}
-                            onChange={(e) => handleTeamMemberChange(index, 'billing_rate', e.target.value ? parseFloat(e.target.value) : null)}
-                            placeholder="0.00"
-                            className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm w-24"
-                          />
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
-                          {member.id ? (
-                            <>
-                              {(() => {
-                                const today = getTodayDate()
-                                const isMarkedForRemoval = member.end_date === today
-                                return isMarkedForRemoval ? (
-                                  <span className="text-orange-600 text-xs italic">Ending today</span>
-                                ) : (
-                                  <button
-                                    onClick={() => handleRemoveTeamMember(member.id)}
-                                    className="text-red-600 hover:text-red-900"
-                                  >
-                                    Remove
-                                  </button>
-                                )
-                              })()}
-                            </>
-                          ) : (
-                            <button
-                              onClick={() => handleRemoveNewTeamMember(index)}
-                              className="text-red-600 hover:text-red-900"
-                            >
-                              Remove
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                      {isAllocationError && (
-                        <tr key={`error-${member.id || index}`} className="bg-red-50">
-                          <td colSpan="7" className="px-4 py-2 border-t border-red-200">
-                            <div className="text-xs text-red-600 whitespace-normal break-words">
-                              {errorMessage}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                      </>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {teamMembers.length === 0 && (
-              <div className="text-center py-8 text-gray-500">
-                No team members. Click "Add Team Member" to get started.
-              </div>
-            )}
-
-            <div className="flex space-x-3 pt-4 mt-4 border-t border-gray-200">
-              <button
-                onClick={handleTeamUpdate}
-                disabled={Object.keys(validationErrors).length > 0}
-                className={`px-6 py-2 rounded-md ${
-                  Object.keys(validationErrors).length > 0
-                    ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
-                    : 'bg-primary text-white hover:bg-primary-dark'
-                }`}
-              >
-                Save Changes
-                {Object.keys(validationErrors).length > 0 && (
-                  <span className="ml-2 text-xs">({Object.keys(validationErrors).length} error{Object.keys(validationErrors).length > 1 ? 's' : ''})</span>
-                )}
-              </button>
-              <button
-                onClick={() => {
-                  setShowTeamModal(false)
-                  setTeamMembers([])
-                  setValidationErrors({})
-                }}
-                className="border border-gray-300 text-gray-700 px-6 py-2 rounded-md hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ManageTeamModal
+        projectId={id}
+        projectName={project?.project_name || 'Project'}
+        isOpen={showTeamModal}
+        onClose={() => setShowTeamModal(false)}
+        onSuccess={loadProject}
+      />
     </div>
   )
 }

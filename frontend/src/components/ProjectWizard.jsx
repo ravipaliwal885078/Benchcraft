@@ -60,7 +60,7 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
   const [structureErrors, setStructureErrors] = useState({})
   
   // Step 3: Team Allotment
-  const [teamAllotment, setTeamAllotment] = useState([]) // [{ role_name, employee_id, allocation_percentage, billable_percentage, billing_rate, start_date, end_date }]
+  const [teamAllotment, setTeamAllotment] = useState([]) // [{ role_name, employee_id, allocation_percentage, internal_allocation_percentage, billable_percentage, billing_rate, start_date, end_date }]
   const [allotmentErrors, setAllotmentErrors] = useState({})
   const [aiSuggestions, setAiSuggestions] = useState(null) // { suggestions, insights, benefits }
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
@@ -90,6 +90,7 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
               role_name: structure.role_name,
               employee_id: '',
               allocation_percentage: structure.utilization_percentage,
+              internal_allocation_percentage: structure.utilization_percentage,
               billable_percentage: 100,
               billing_rate: '',
               start_date: projectDetails.start_date || '',
@@ -171,6 +172,7 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
               role_name: structure.role_name,
               employee_id: sug.employee_id.toString(),
               allocation_percentage: sug.allocation_percentage,
+              internal_allocation_percentage: sug.internal_allocation_percentage || sug.allocation_percentage,
               billable_percentage: sug.billable_percentage || 100,
               billing_rate: sug.billing_rate || '',
               start_date: projectDetails.start_date || '',
@@ -182,6 +184,7 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
               role_name: structure.role_name,
               employee_id: '',
               allocation_percentage: structure.utilization_percentage,
+              internal_allocation_percentage: structure.utilization_percentage,
               billable_percentage: 100,
               billing_rate: '',
               start_date: projectDetails.start_date || '',
@@ -210,6 +213,7 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
             role_name: structure.role_name,
             employee_id: '',
             allocation_percentage: structure.utilization_percentage,
+            internal_allocation_percentage: structure.utilization_percentage,
             billable_percentage: 100,
             billing_rate: '',
             start_date: projectDetails.start_date || '',
@@ -282,6 +286,7 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
     if (!projectDetails.description.trim() || projectDetails.description.length < 10) {
       errors.description = 'Description is required (minimum 10 characters)'
     }
+    setStep1Errors(errors)
     return Object.keys(errors).length === 0
   }
   
@@ -379,6 +384,7 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
         allocations: teamAllotment.map(a => ({
           employee_id: parseInt(a.employee_id),
           allocation_percentage: parseInt(a.allocation_percentage),
+          internal_allocation_percentage: parseInt(a.internal_allocation_percentage !== undefined ? a.internal_allocation_percentage : a.allocation_percentage),
           billable_percentage: parseInt(a.billable_percentage),
           billing_rate: a.billing_rate ? parseFloat(a.billing_rate) : null,
           start_date: a.start_date,
@@ -1044,7 +1050,8 @@ const Step3TeamAllotment = ({ allotment, employees, onChange, onAllotmentChange,
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Resource</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Allocation %</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Allocation % (Client)</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Internal Allocation %</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Billable %</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Billing Rate</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Start Date</th>
@@ -1084,6 +1091,18 @@ const Step3TeamAllotment = ({ allotment, employees, onChange, onAllotmentChange,
                       value={item.allocation_percentage}
                       onChange={(e) => onAllotmentChange(index, 'allocation_percentage', parseInt(e.target.value) || 0)}
                       className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm"
+                      title="Allocation percentage reported to client"
+                    />
+                  </td>
+                  <td className="px-4 py-3">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={item.internal_allocation_percentage !== undefined ? item.internal_allocation_percentage : item.allocation_percentage}
+                      onChange={(e) => onAllotmentChange(index, 'internal_allocation_percentage', parseInt(e.target.value) || 0)}
+                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm"
+                      title="Actual internal allocation percentage (for cost calculation)"
                     />
                   </td>
                   <td className="px-4 py-3">
@@ -1215,7 +1234,8 @@ const Step4Review = ({ projectDetails, teamStructure, teamAllotment, employees }
             <tr>
               <th className="px-4 py-2 text-left">Role</th>
               <th className="px-4 py-2 text-left">Resource</th>
-              <th className="px-4 py-2 text-left">Allocation %</th>
+              <th className="px-4 py-2 text-left">Allocation % (Client)</th>
+              <th className="px-4 py-2 text-left">Internal Allocation %</th>
               <th className="px-4 py-2 text-left">Billable %</th>
             </tr>
           </thead>
@@ -1225,6 +1245,7 @@ const Step4Review = ({ projectDetails, teamStructure, teamAllotment, employees }
                 <td className="px-4 py-2">{item.role_name}</td>
                 <td className="px-4 py-2">{getEmployeeName(item.employee_id)}</td>
                 <td className="px-4 py-2">{item.allocation_percentage}%</td>
+                <td className="px-4 py-2">{item.internal_allocation_percentage !== undefined ? item.internal_allocation_percentage : item.allocation_percentage}%</td>
                 <td className="px-4 py-2">{item.billable_percentage}%</td>
               </tr>
             ))}

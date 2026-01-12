@@ -126,7 +126,7 @@ class Employee(Base):
     
     # Relationships
     skills = relationship("EmployeeSkill", back_populates="employee", cascade="all, delete-orphan")
-    allocations = relationship("Allocation", back_populates="employee", cascade="all, delete-orphan")
+    allocations = relationship("Allocation", back_populates="employee", cascade="all, delete-orphan", foreign_keys="Allocation.emp_id")
     feedbacks = relationship("Feedback360", back_populates="employee", cascade="all, delete-orphan")
     bench_entries = relationship("BenchLedger", back_populates="employee", cascade="all, delete-orphan")
     domains = relationship("EmployeeDomain", back_populates="employee", cascade="all, delete-orphan")
@@ -134,6 +134,7 @@ class Employee(Base):
     priority_scores = relationship("PriorityScoring", back_populates="employee", cascade="all, delete-orphan")
     risks = relationship("RiskRegister", back_populates="employee", cascade="all, delete-orphan", foreign_keys="RiskRegister.emp_id")
     mitigation_owned_risks = relationship("RiskRegister", foreign_keys="RiskRegister.mitigation_owner_emp_id")
+    trainee_allocations = relationship("Allocation", foreign_keys="Allocation.mentoring_primary_emp_id", back_populates="mentoring_primary")
 
 
 class Project(Base):
@@ -168,22 +169,75 @@ class Allocation(Base):
     """
     The Ledger - Links Employees to Projects
     
-    Supports multiple simultaneous allocations per employee.
+    Supports multiple simultaneous allocations per employee with shadow resource tracking
+    and internal vs client allocation differentiation.
     
     Key Concepts:
     - allocation_percentage: How much of employee's total time is allocated to this project (0-100%)
+      - This is what is REPORTED to the client
       - Sum across all active allocations should ideally be 100% (fully utilized)
       - Can be < 100% if underutilized, or > 100% if overallocated
+    - internal_allocation_percentage: Actual percentage of employee's time spent on this project internally (0-100%)
+      - This is the ACTUAL internal utilization
+      - Can be LESS than allocation_percentage (over-billing scenario - employee billed more than actual work)
+      - Can be MORE than allocation_percentage (under-billing scenario - employee works more than billed)
+      - Used for cost calculations (what company pays employee)
     - billable_percentage: How much of the allocation is billable to the client (0-100%)
       - Can be different from allocation_percentage
       - Example: Employee allocated 100% but only 50% billable (during resignation/replacement)
       - Example: Employee allocated 50% and 100% billable (full billing on partial allocation)
+    - is_trainee: Indicates if this allocation is for a trainee/shadow resource
+      - Trainees are NEVER billable to the client (billable_percentage must be 0)
+      - Trainees contribute to cost but not revenue
+      - Must have a mentoring_primary_emp_id if is_trainee=True
+    - mentoring_primary_emp_id: References the primary resource being shadowed
+      - Only used when is_trainee=True
+      - Must reference an active allocation on the same project
+      - Cannot reference self (emp_id)
     
-    Scenarios:
-    1. Multiple projects: Roopak on Novartis (50% alloc, 100% billable) + PwC (40% alloc, 100% billable) = 90% utilized
-    2. Single project: Roopak on Novartis (100% alloc, 100% billable) = fully utilized
-    3. Partial billing: Roopak on Novartis (50% alloc, 50% billable) + PwC (50% alloc, 50% billable)
-    4. Replacement scenario: Roopak on Novartis (100% alloc, 50% billable) - during resignation
+    Financial Calculation Scenarios:
+    
+    1. Standard Allocation (Primary Resource):
+       - is_trainee: False
+       - internal_allocation_percentage: 50%
+       - allocation_percentage: 50% (reported to client)
+       - billable_percentage: 100%
+       - Billed hours: (total_hours × allocation_percentage × billable_percentage) / 10000
+       - Cost hours: (total_hours × internal_allocation_percentage) / 100
+       - Revenue: billing_rate × billed_hours
+       - Cost: cost_rate × cost_hours
+    
+    2. Over-billed Resource (Efficiency Scenario):
+       - is_trainee: False
+       - internal_allocation_percentage: 25% (actually works 25%)
+       - allocation_percentage: 75% (client billed for 75%)
+       - billable_percentage: 100%
+       - Billed hours: (160 × 75 × 100) / 10000 = 120 hours
+       - Cost hours: (160 × 25) / 100 = 40 hours
+       - Higher margin due to efficiency (more revenue, less cost)
+    
+    3. Trainee/Shadow Resource:
+       - is_trainee: True
+       - mentoring_primary_emp_id: 123 (primary resource ID)
+       - internal_allocation_percentage: 100%
+       - allocation_percentage: 0% (not reported to client)
+       - billable_percentage: 0% (never billable)
+       - Billed hours: 0 (trainees never billable)
+       - Cost hours: (160 × 100) / 100 = 160 hours
+       - Revenue: $0
+       - Cost: cost_rate × 160 hours (pure training investment)
+    
+    4. Multiple Projects:
+       - Employee can have different internal vs client allocations across projects
+       - Total internal_allocation_percentage should ideally sum to 100%
+       - Total allocation_percentage can exceed 100% (over-billing scenario)
+    
+    Validation Rules:
+    - If is_trainee=True: billable_percentage MUST be 0, mentoring_primary_emp_id MUST NOT be NULL
+    - If is_trainee=True: billing_rate should be 0 or NULL
+    - mentoring_primary_emp_id must reference valid employee with active allocation on same project
+    - mentoring_primary_emp_id cannot reference self (emp_id)
+    - internal_allocation_percentage must be between 0 and 100
     """
     __tablename__ = 'allocations'
     
@@ -196,8 +250,15 @@ class Allocation(Base):
     is_revealed = Column(Boolean, default=False)  # Fairness Flag - whether employee knows their rate
     
     # Allocation and Billable Percentages
-    allocation_percentage = Column(Integer, nullable=False, default=100)  # How much of employee's time allocated (0-100%)
+    allocation_percentage = Column(Integer, nullable=False, default=100)  # How much of employee's time allocated (0-100%) - reported to client
     billable_percentage = Column(Integer, nullable=False, default=100)  # How much of allocation is billable (0-100%)
+    
+    # Internal vs Client Allocation Tracking
+    internal_allocation_percentage = Column(Integer, nullable=False, default=100)  # Actual percentage of employee's time spent internally (0-100%)
+    
+    # Shadow Resource Tracking
+    is_trainee = Column(Boolean, default=False, nullable=False)  # Indicates if this allocation is for a trainee/shadow resource
+    mentoring_primary_emp_id = Column(Integer, ForeignKey('employees.id'), nullable=True)  # References the primary resource being shadowed
     
     # Legacy field for backward compatibility (deprecated - use allocation_percentage)
     utilization = Column(Integer)  # Deprecated: Use allocation_percentage instead
@@ -205,10 +266,11 @@ class Allocation(Base):
     rate_card_id = Column(Integer, ForeignKey('rate_cards.id'), nullable=True)  # Link to rate card used
     
     # Relationships
-    employee = relationship("Employee", back_populates="allocations")
+    employee = relationship("Employee", back_populates="allocations", foreign_keys=[emp_id])
     project = relationship("Project", back_populates="allocations")
     rate_card = relationship("RateCard", foreign_keys=[rate_card_id], lazy='select')
     financials = relationship("AllocationFinancial", back_populates="allocation", cascade="all, delete-orphan", uselist=False)
+    mentoring_primary = relationship("Employee", foreign_keys=[mentoring_primary_emp_id], back_populates="trainee_allocations")
 
 
 class EmployeeSkill(Base):
@@ -369,18 +431,38 @@ class AllocationFinancial(Base):
     """
     Financial Details per Allocation
     
-    Revenue Calculation:
-    - Revenue = billing_rate × billed_hours
-    - billed_hours = (total_hours × allocation_percentage × billable_percentage) / 10000
-    - Example: 160 hours/month, 50% allocation, 100% billable = 80 billable hours
+    Updated calculation formulas to support shadow resources and internal vs client allocation:
     
-    Cost Calculation:
-    - Cost = cost_rate × utilized_hours
-    - utilized_hours = (total_hours × allocation_percentage) / 100
-    - Example: 160 hours/month, 50% allocation = 80 utilized hours
+    For PRIMARY Resources (is_trainee=False):
+    - Revenue Calculation:
+      - Revenue = billing_rate × billed_hours
+      - billed_hours = (total_hours × allocation_percentage × billable_percentage) / 10000
+      - Example: 160 hours/month, 50% allocation (reported), 100% billable = 80 billable hours
     
-    Gross Margin:
-    - gross_margin = (revenue - cost) / revenue × 100
+    - Cost Calculation:
+      - Cost = cost_rate × cost_hours
+      - cost_hours = (total_hours × internal_allocation_percentage) / 100
+      - Example: 160 hours/month, 25% internal allocation = 40 cost hours
+      - Note: Cost is based on ACTUAL internal work, not client-reported allocation
+    
+    - Gross Margin:
+      - gross_margin = (revenue - cost) / revenue × 100 if revenue > 0 else 0
+    
+    For TRAINEE Resources (is_trainee=True):
+    - Revenue Calculation:
+      - Revenue = $0 (trainees are NEVER billable)
+      - billed_hours = 0
+    
+    - Cost Calculation:
+      - Cost = cost_rate × cost_hours
+      - cost_hours = (total_hours × internal_allocation_percentage) / 100
+      - Example: 160 hours/month, 100% internal allocation = 160 cost hours
+      - Pure training investment (cost center)
+    
+    Key Differences:
+    - billed_hours: Based on allocation_percentage (what client sees)
+    - cost_hours: Based on internal_allocation_percentage (actual internal work)
+    - This allows tracking over-billing (internal < allocation) and under-billing (internal > allocation)
     """
     __tablename__ = 'allocation_financials'
     
@@ -483,3 +565,218 @@ class RiskRegister(Base):
     employee = relationship("Employee", back_populates="risks", foreign_keys=[emp_id])
     project = relationship("Project", back_populates="risks", foreign_keys=[project_id])
     mitigation_owner = relationship("Employee", foreign_keys=[mitigation_owner_emp_id], overlaps="mitigation_owned_risks")
+
+
+# ============================================================================
+# Validation Functions for Allocation Model
+# ============================================================================
+
+from sqlalchemy import event
+from sqlalchemy.orm import Session
+
+def validate_allocation(allocation):
+    """
+    Validate Allocation model fields according to business rules.
+    
+    Validation Rules:
+    1. If is_trainee=True: billable_percentage MUST be 0
+    2. If is_trainee=True: mentoring_primary_emp_id MUST NOT be NULL
+    3. If is_trainee=True: billing_rate should be 0 or NULL
+    4. mentoring_primary_emp_id cannot reference self (emp_id)
+    5. internal_allocation_percentage must be between 0 and 100
+    6. allocation_percentage must be between 0 and 100
+    7. billable_percentage must be between 0 and 100
+    """
+    errors = []
+    
+    # Validate internal_allocation_percentage range
+    if allocation.internal_allocation_percentage < 0 or allocation.internal_allocation_percentage > 100:
+        errors.append("internal_allocation_percentage must be between 0 and 100")
+    
+    # Validate allocation_percentage range
+    if allocation.allocation_percentage < 0 or allocation.allocation_percentage > 100:
+        errors.append("allocation_percentage must be between 0 and 100")
+    
+    # Validate billable_percentage range
+    if allocation.billable_percentage < 0 or allocation.billable_percentage > 100:
+        errors.append("billable_percentage must be between 0 and 100")
+    
+    # Validate trainee rules
+    if allocation.is_trainee:
+        if allocation.billable_percentage != 0:
+            errors.append("Trainee allocations must have billable_percentage = 0")
+        
+        if allocation.mentoring_primary_emp_id is None:
+            errors.append("Trainee allocations must have a mentoring_primary_emp_id")
+        
+        if allocation.mentoring_primary_emp_id == allocation.emp_id:
+            errors.append("Trainee cannot mentor themselves (mentoring_primary_emp_id cannot equal emp_id)")
+        
+        if allocation.billing_rate and allocation.billing_rate != 0:
+            errors.append("Trainee allocations should have billing_rate = 0 or NULL")
+    
+    if errors:
+        raise ValueError("Allocation validation failed: " + "; ".join(errors))
+    
+    return True
+
+
+@event.listens_for(Allocation, 'before_insert')
+@event.listens_for(Allocation, 'before_update')
+def validate_allocation_event(mapper, connection, target):
+    """SQLAlchemy event listener to validate Allocation before insert/update"""
+    validate_allocation(target)
+
+
+# ============================================================================
+# Example Query Functions
+# ============================================================================
+
+def get_trainees_for_project(session: Session, project_id: int):
+    """
+    Find all trainee/shadow resources for a specific project.
+    
+    Example usage:
+        from sqlalchemy.orm import sessionmaker
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        trainees = get_trainees_for_project(session, project_id=1)
+    """
+    return session.query(Allocation).filter(
+        Allocation.proj_id == project_id,
+        Allocation.is_trainee == True
+    ).all()
+
+
+def get_employee_financial_summary(session: Session, employee_id: int):
+    """
+    Calculate total cost vs revenue for an employee across all active projects.
+    
+    Returns dict with:
+    - total_revenue: Sum of all billed revenue
+    - total_cost: Sum of all cost based on internal allocation
+    - gross_margin: Calculated margin percentage
+    - allocations: List of allocation details
+    
+    Example usage:
+        summary = get_employee_financial_summary(session, employee_id=123)
+        print(f"Total Revenue: ${summary['total_revenue']}")
+        print(f"Total Cost: ${summary['total_cost']}")
+        print(f"Gross Margin: {summary['gross_margin']}%")
+    """
+    from datetime import date
+    
+    allocations = session.query(Allocation).filter(
+        Allocation.emp_id == employee_id,
+        (Allocation.end_date.is_(None)) | (Allocation.end_date >= date.today())
+    ).all()
+    
+    total_revenue = 0.0
+    total_cost = 0.0
+    allocation_details = []
+    
+    for alloc in allocations:
+        # Get financial details if available
+        if alloc.financials:
+            total_revenue += alloc.financials.actual_revenue or 0.0
+            total_cost += alloc.financials.actual_cost or 0.0
+            allocation_details.append({
+                'project_id': alloc.proj_id,
+                'allocation_id': alloc.id,
+                'revenue': alloc.financials.actual_revenue or 0.0,
+                'cost': alloc.financials.actual_cost or 0.0,
+                'is_trainee': alloc.is_trainee
+            })
+    
+    gross_margin = ((total_revenue - total_cost) / total_revenue * 100) if total_revenue > 0 else 0
+    
+    return {
+        'total_revenue': total_revenue,
+        'total_cost': total_cost,
+        'gross_margin': gross_margin,
+        'allocations': allocation_details
+    }
+
+
+def get_over_billed_allocations(session: Session, project_id: int = None):
+    """
+    Identify over-billed allocations where internal_allocation < allocation_percentage.
+    These represent efficiency scenarios where employee works less than billed.
+    
+    Example usage:
+        over_billed = get_over_billed_allocations(session, project_id=1)
+        for alloc in over_billed:
+            print(f"Employee {alloc.emp_id}: Billed {alloc.allocation_percentage}%, Actual {alloc.internal_allocation_percentage}%")
+    """
+    query = session.query(Allocation).filter(
+        Allocation.is_trainee == False,
+        Allocation.internal_allocation_percentage < Allocation.allocation_percentage
+    )
+    
+    if project_id:
+        query = query.filter(Allocation.proj_id == project_id)
+    
+    return query.all()
+
+
+def get_under_billed_allocations(session: Session, project_id: int = None):
+    """
+    Identify under-billed allocations where internal_allocation > allocation_percentage.
+    These represent scenarios where employee works more than billed.
+    
+    Example usage:
+        under_billed = get_under_billed_allocations(session, project_id=1)
+        for alloc in under_billed:
+            print(f"Employee {alloc.emp_id}: Billed {alloc.allocation_percentage}%, Actual {alloc.internal_allocation_percentage}%")
+    """
+    query = session.query(Allocation).filter(
+        Allocation.is_trainee == False,
+        Allocation.internal_allocation_percentage > Allocation.allocation_percentage
+    )
+    
+    if project_id:
+        query = query.filter(Allocation.proj_id == project_id)
+    
+    return query.all()
+
+
+def get_shadow_resources_and_mentors(session: Session, project_id: int):
+    """
+    Find all shadow resources and their primary mentors for a project.
+    
+    Returns list of dicts with:
+    - trainee: Allocation object for trainee
+    - mentor: Employee object for primary mentor
+    - mentor_allocation: Allocation object for mentor's allocation
+    
+    Example usage:
+        shadows = get_shadow_resources_and_mentors(session, project_id=1)
+        for shadow in shadows:
+            print(f"Trainee: {shadow['trainee'].employee.first_name}")
+            print(f"Mentor: {shadow['mentor'].first_name}")
+    """
+    trainees = session.query(Allocation).filter(
+        Allocation.proj_id == project_id,
+        Allocation.is_trainee == True
+    ).all()
+    
+    results = []
+    for trainee_alloc in trainees:
+        if trainee_alloc.mentoring_primary_emp_id:
+            mentor = session.query(Employee).filter(
+                Employee.id == trainee_alloc.mentoring_primary_emp_id
+            ).first()
+            
+            mentor_alloc = session.query(Allocation).filter(
+                Allocation.emp_id == trainee_alloc.mentoring_primary_emp_id,
+                Allocation.proj_id == project_id,
+                Allocation.is_trainee == False
+            ).first()
+            
+            results.append({
+                'trainee': trainee_alloc,
+                'mentor': mentor,
+                'mentor_allocation': mentor_alloc
+            })
+    
+    return results

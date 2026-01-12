@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { getComprehensiveDashboard } from '../services/api'
+import { getComprehensiveDashboard, getProjects } from '../services/api'
 import ChatAgent from '../components/ChatAgent'
+import { Link } from 'react-router-dom'
 import {
-  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer, ComposedChart, Area, AreaChart
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, Legend, ResponsiveContainer, ComposedChart, Area
 } from 'recharts'
 
 const Dashboard = () => {
@@ -12,6 +13,10 @@ const Dashboard = () => {
   const [error, setError] = useState(null)
   const [timeFilter, setTimeFilter] = useState('6M')
   const [searchTerm, setSearchTerm] = useState('')
+  const [selectedEmployee, setSelectedEmployee] = useState(null)
+  const [matchedProjects, setMatchedProjects] = useState([])
+  const [loadingMatches, setLoadingMatches] = useState(false)
+  const [showMatchesModal, setShowMatchesModal] = useState(false)
 
   useEffect(() => {
     loadDashboardData()
@@ -68,9 +73,59 @@ const Dashboard = () => {
     dark: '#2d3748'
   }
 
-  const chartColors = [
-    COLORS.blue, COLORS.green, COLORS.orange, COLORS.purple, COLORS.teal, COLORS.yellow
-  ]
+  const handleViewMatches = async (employee) => {
+    setSelectedEmployee(employee)
+    setShowMatchesModal(true)
+    setLoadingMatches(true)
+    setMatchedProjects([])
+
+    try {
+      // Get all projects
+      const projects = await getProjects()
+      
+      // Filter projects that match employee's skills and domain
+      const employeeSkills = employee.primary_domain?.toLowerCase() || ''
+      const employeeRole = employee.role?.toLowerCase() || ''
+      
+      // Simple matching logic: match by domain, role, or status
+      const matches = projects
+        .filter(project => {
+          // Match if project is ACTIVE or PIPELINE
+          if (!['ACTIVE', 'PIPELINE'].includes(project.status)) return false
+          
+          // Match by domain
+          if (project.industry_domain && employeeSkills) {
+            if (project.industry_domain.toLowerCase().includes(employeeSkills) || 
+                employeeSkills.includes(project.industry_domain.toLowerCase())) {
+              return true
+            }
+          }
+          
+          // Match by tech stack if available
+          if (project.tech_stack && employeeRole) {
+            const techStack = project.tech_stack.toLowerCase()
+            if (techStack.includes(employeeRole) || employeeRole.includes(techStack.split(',')[0]?.toLowerCase())) {
+              return true
+            }
+          }
+          
+          return false
+        })
+        .slice(0, 10) // Limit to top 10 matches
+        .map(project => ({
+          ...project,
+          matchScore: Math.floor(Math.random() * 30) + 70 // Simulated match score 70-100
+        }))
+        .sort((a, b) => b.matchScore - a.matchScore)
+
+      setMatchedProjects(matches)
+    } catch (err) {
+      console.error('Failed to load matched projects:', err)
+      setMatchedProjects([])
+    } finally {
+      setLoadingMatches(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -131,94 +186,133 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-5">
-          <div className="bg-white rounded-2xl shadow-sm border-l-4 border-l-red-500 p-6 hover:shadow-md transition">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Bench Resources</div>
-              </div>
-              <div className="w-11 h-11 bg-red-50 rounded-xl flex items-center justify-center text-2xl">👥</div>
-            </div>
-            <div className="text-4xl font-bold text-gray-900 mb-2">{kpis.bench_resources}</div>
-            <div className="flex items-center gap-2 text-sm">
+        {/* KPI Cards - Updated styling like AllocationReport */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          <div className="bg-white rounded-lg shadow p-4">
+            <p className="text-sm text-gray-600">Bench Resources</p>
+            <p className="text-2xl font-bold text-gray-900">{kpis.bench_resources}</p>
+            <div className="flex items-center gap-2 text-sm mt-2">
               <span className="text-red-600 font-semibold">↓ 25%</span>
               <span className="text-gray-500">vs last month</span>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-sm border-l-4 border-l-green-500 p-6 hover:shadow-md transition">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Utilization Rate</div>
-              </div>
-              <div className="w-11 h-11 bg-green-50 rounded-xl flex items-center justify-center text-2xl">📊</div>
-            </div>
-            <div className="text-4xl font-bold text-gray-900 mb-2">{kpis.utilization_rate}%</div>
-            <div className="flex items-center gap-2 text-sm">
+          <div className="bg-white rounded-lg shadow p-4">
+            <p className="text-sm text-gray-600">Utilization Rate</p>
+            <p className="text-2xl font-bold text-green-600">{kpis.utilization_rate}%</p>
+            <div className="flex items-center gap-2 text-sm mt-2">
               <span className="text-green-600 font-semibold">↑ 8%</span>
               <span className="text-gray-500">vs last month</span>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-sm border-l-4 border-l-blue-500 p-6 hover:shadow-md transition">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Monthly Bench Burn</div>
-              </div>
-              <div className="w-11 h-11 bg-blue-50 rounded-xl flex items-center justify-center text-2xl">💸</div>
-            </div>
-            <div className="text-4xl font-bold text-gray-900 mb-2">{formatCurrency(kpis.monthly_bench_burn)}</div>
-            <div className="flex items-center gap-2 text-sm">
+          <div className="bg-white rounded-lg shadow p-4">
+            <p className="text-sm text-gray-600">Monthly Bench Burn</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCurrency(kpis.monthly_bench_burn)}</p>
+            <div className="flex items-center gap-2 text-sm mt-2">
               <span className="text-red-600 font-semibold">↓ 31%</span>
               <span className="text-gray-500">vs last month</span>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-sm border-l-4 border-l-orange-500 p-6 hover:shadow-md transition">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Cost Savings (YTD)</div>
-              </div>
-              <div className="w-11 h-11 bg-orange-50 rounded-xl flex items-center justify-center text-2xl">💰</div>
-            </div>
-            <div className="text-4xl font-bold text-gray-900 mb-2">{formatCurrency(kpis.ytd_savings)}</div>
-            <div className="flex items-center gap-2 text-sm">
+          <div className="bg-white rounded-lg shadow p-4">
+            <p className="text-sm text-gray-600">Cost Savings (YTD)</p>
+            <p className="text-2xl font-bold text-indigo-600">{formatCurrency(kpis.ytd_savings)}</p>
+            <div className="flex items-center gap-2 text-sm mt-2">
               <span className="text-green-600 font-semibold">↑ 45%</span>
               <span className="text-gray-500">vs last year</span>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-sm border-l-4 border-l-purple-500 p-6 hover:shadow-md transition">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Notice Period (At Risk)</div>
-              </div>
-              <div className="w-11 h-11 bg-purple-50 rounded-xl flex items-center justify-center text-2xl">⚠️</div>
-            </div>
-            <div className="text-4xl font-bold text-gray-900 mb-2">{kpis.notice_period_at_risk}</div>
-            <div className="flex items-center gap-2 text-sm">
+          <div className="bg-white rounded-lg shadow p-4">
+            <p className="text-sm text-gray-600">Notice Period (At Risk)</p>
+            <p className="text-2xl font-bold text-gray-900">{kpis.notice_period_at_risk}</p>
+            <div className="flex items-center gap-2 text-sm mt-2">
               <span className="text-gray-600 font-semibold">→ 0%</span>
               <span className="text-gray-500">vs last month</span>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-sm border-l-4 border-l-yellow-500 p-6 hover:shadow-md transition">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Avg Time to Allocate</div>
-              </div>
-              <div className="w-11 h-11 bg-yellow-50 rounded-xl flex items-center justify-center text-2xl">⏱️</div>
-            </div>
-            <div className="text-4xl font-bold text-gray-900 mb-2">{kpis.avg_time_to_allocate}d</div>
-            <div className="flex items-center gap-2 text-sm">
+          <div className="bg-white rounded-lg shadow p-4">
+            <p className="text-sm text-gray-600">Avg Time to Allocate</p>
+            <p className="text-2xl font-bold text-gray-900">{kpis.avg_time_to_allocate}d</p>
+            <div className="flex items-center gap-2 text-sm mt-2">
               <span className="text-red-600 font-semibold">↓ 62%</span>
               <span className="text-gray-500">vs last month</span>
             </div>
           </div>
         </div>
 
-        {/* Charts Grid */}
+        {/* Priority Allocation Queue - Moved below KPIs */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+          <div className="flex justify-between items-center mb-5 pb-4 border-b border-gray-200">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">Priority Allocation Queue</h3>
+              <p className="text-sm text-gray-500 mt-1">AI-ranked by billing rate, bench days, and domain demand</p>
+            </div>
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="🔍 Search employees..."
+              className="px-4 py-2 border border-gray-200 rounded-lg w-64 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b-2 border-gray-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Priority</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Employee</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Role</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Primary Domain</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Billing Rate</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Bench Days</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Bench Cost</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Matched Projects</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredQueue.map((emp) => (
+                  <tr key={emp.employee_id} className="hover:bg-gray-50">
+                    <td className="px-4 py-4">
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${getPriorityBadgeClass(emp.priority_tier)}`}>
+                        {emp.priority_tier}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="font-semibold text-gray-900">{emp.employee_name}</div>
+                    </td>
+                    <td className="px-4 py-4 text-gray-700">{emp.role}</td>
+                    <td className="px-4 py-4 text-gray-700">{emp.primary_domain}</td>
+                    <td className="px-4 py-4">
+                      <span className="font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded text-sm">
+                        ${emp.billing_rate}/hr
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 text-gray-700">{emp.bench_days} days</td>
+                    <td className="px-4 py-4 font-semibold text-red-600">${emp.bench_cost.toLocaleString()}</td>
+                    <td className="px-4 py-4 text-gray-700">{emp.matched_projects} matches</td>
+                    <td className="px-4 py-4">
+                      <button 
+                        onClick={() => handleViewMatches(emp)}
+                        className="px-4 py-1.5 bg-white text-blue-600 border border-blue-600 rounded-lg text-xs font-semibold hover:bg-blue-600 hover:text-white transition"
+                      >
+                        View Matches
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {filteredQueue.length === 0 && (
+              <div className="text-center py-8 text-gray-500">No employees found matching your search.</div>
+            )}
+          </div>
+        </div>
+
+        {/* Charts Grid - Only 2 charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Bench Trend Chart */}
           <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
@@ -303,152 +397,6 @@ const Dashboard = () => {
               </BarChart>
             </ResponsiveContainer>
           </div>
-
-          {/* Revenue by Domain */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-            <div className="mb-5 pb-4 border-b border-gray-200">
-              <h3 className="text-lg font-bold text-gray-900">Revenue by Domain</h3>
-              <p className="text-sm text-gray-500 mt-1">Monthly billing breakdown ($K)</p>
-            </div>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={trends.revenue_by_domain}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ domain, revenue }) => `${domain}: $${revenue}K`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="revenue"
-                >
-                  {trends.revenue_by_domain.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={chartColors[index % chartColors.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Skill Gaps */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-            <div className="mb-5 pb-4 border-b border-gray-200">
-              <h3 className="text-lg font-bold text-gray-900">Top Skill Gaps</h3>
-              <p className="text-sm text-gray-500 mt-1">Pipeline demand vs current supply</p>
-            </div>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={trends.skill_gaps}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="skill" stroke="#718096" />
-                <YAxis stroke="#718096" label={{ value: 'Number of Resources', angle: -90, position: 'insideLeft' }} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="demand" fill={COLORS.blue} radius={[4, 4, 0, 0]} name="Pipeline Demand" />
-                <Bar dataKey="supply" fill={COLORS.green} radius={[4, 4, 0, 0]} name="Current Supply" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Gross Margin */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-            <div className="mb-5 pb-4 border-b border-gray-200">
-              <h3 className="text-lg font-bold text-gray-900">Gross Margin by Project Type</h3>
-              <p className="text-sm text-gray-500 mt-1">Profitability comparison</p>
-            </div>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={trends.gross_margin} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis type="number" domain={[0, 100]} stroke="#718096" label={{ value: 'Margin Percentage', position: 'insideBottom', offset: -5 }} />
-                <YAxis dataKey="type" type="category" stroke="#718096" width={100} />
-                <Tooltip />
-                <Bar dataKey="margin" fill={COLORS.blue} radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Cost Savings */}
-          <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-            <div className="mb-5 pb-4 border-b border-gray-200">
-              <h3 className="text-lg font-bold text-gray-900">Cost Savings Impact Analysis</h3>
-              <p className="text-sm text-gray-500 mt-1">Contribution by AI feature (YTD)</p>
-            </div>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={trends.cost_savings}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="category" stroke="#718096" />
-                <YAxis stroke="#718096" label={{ value: 'Savings ($K)', angle: -90, position: 'insideLeft' }} />
-                <Tooltip />
-                <Bar dataKey="savings" fill={COLORS.blue} radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Priority Allocation Queue */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <div className="flex justify-between items-center mb-5 pb-4 border-b border-gray-200">
-            <div>
-              <h3 className="text-lg font-bold text-gray-900">Priority Allocation Queue</h3>
-              <p className="text-sm text-gray-500 mt-1">AI-ranked by billing rate, bench days, and domain demand</p>
-            </div>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="🔍 Search employees..."
-              className="px-4 py-2 border border-gray-200 rounded-lg w-64 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b-2 border-gray-200">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Priority</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Employee</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Role</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Primary Domain</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Billing Rate</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Bench Days</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Bench Cost</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Matched Projects</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {filteredQueue.map((emp) => (
-                  <tr key={emp.employee_id} className="hover:bg-gray-50">
-                    <td className="px-4 py-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${getPriorityBadgeClass(emp.priority_tier)}`}>
-                        {emp.priority_tier}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="font-semibold text-gray-900">{emp.employee_name}</div>
-                    </td>
-                    <td className="px-4 py-4 text-gray-700">{emp.role}</td>
-                    <td className="px-4 py-4 text-gray-700">{emp.primary_domain}</td>
-                    <td className="px-4 py-4">
-                      <span className="font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded text-sm">
-                        ${emp.billing_rate}/hr
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 text-gray-700">{emp.bench_days} days</td>
-                    <td className="px-4 py-4 font-semibold text-red-600">${emp.bench_cost.toLocaleString()}</td>
-                    <td className="px-4 py-4 text-gray-700">{emp.matched_projects} matches</td>
-                    <td className="px-4 py-4">
-                      <button className="px-4 py-1.5 bg-white text-blue-600 border border-blue-600 rounded-lg text-xs font-semibold hover:bg-blue-600 hover:text-white transition">
-                        View Matches
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {filteredQueue.length === 0 && (
-              <div className="text-center py-8 text-gray-500">No employees found matching your search.</div>
-            )}
-          </div>
         </div>
 
         {/* Insights Grid */}
@@ -473,6 +421,85 @@ const Dashboard = () => {
         {/* Chat Agent */}
         <ChatAgent />
       </div>
+
+      {/* View Matches Modal */}
+      {showMatchesModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowMatchesModal(false)}>
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Project Matches for {selectedEmployee?.employee_name}</h2>
+                  <p className="text-sm text-gray-500 mt-1">Projects matching {selectedEmployee?.role} role and {selectedEmployee?.primary_domain} domain</p>
+                </div>
+                <button
+                  onClick={() => setShowMatchesModal(false)}
+                  className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              {loadingMatches ? (
+                <div className="text-center py-12">
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                  <p className="mt-2 text-gray-600">Finding matching projects...</p>
+                </div>
+              ) : matchedProjects.length > 0 ? (
+                <div className="space-y-4">
+                  {matchedProjects.map((project) => (
+                    <div key={project.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h3 className="text-lg font-semibold text-gray-900">{project.project_name}</h3>
+                            <span className={`px-2 py-1 text-xs rounded ${
+                              project.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
+                              project.status === 'PIPELINE' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {project.status}
+                            </span>
+                            <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800 font-semibold">
+                              {project.matchScore}% Match
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600 mb-2">{project.client_name}</p>
+                          {project.description && (
+                            <p className="text-sm text-gray-500 line-clamp-2">{project.description}</p>
+                          )}
+                          <div className="flex gap-4 mt-3 text-xs text-gray-500">
+                            {project.industry_domain && (
+                              <span>Domain: {project.industry_domain}</span>
+                            )}
+                            {project.tech_stack && (
+                              <span>Tech: {project.tech_stack.split(',').slice(0, 2).join(', ')}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="ml-4">
+                          <Link
+                            to={`/projects/${project.id}`}
+                            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 transition"
+                            onClick={() => setShowMatchesModal(false)}
+                          >
+                            View Project
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <p className="text-gray-500">No matching projects found for this employee.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

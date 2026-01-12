@@ -166,4 +166,10 @@ export const createEmployeeFeedback = async (employeeId, feedbackData) => {
   return response.data
 }
 
+// Training Recommendations API
+export const getTrainingRecommendations = async () => {
+  const response = await api.get('/training/recommendations')
+  return response.data
+}
+
 export default api
