@@ -27,7 +27,7 @@ const PageHeader = ({
   // Default variant: Simple flex layout (most common)
   if (variant === 'default') {
     return (
-      <div className="flex justify-between items-start">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
         <div className="flex-1">
           <div className="flex items-center gap-3">
             {icon && <div className="flex-shrink-0">{icon}</div>}
@@ -39,7 +39,7 @@ const PageHeader = ({
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-4 ml-4">
+        <div className="flex items-center gap-4 flex-shrink-0">
           {backLink && (
             <Link
               to={backLink}
@@ -48,7 +48,7 @@ const PageHeader = ({
               ← {backLabel}
             </Link>
           )}
-          {actions && <div className="flex items-center gap-2">{actions}</div>}
+          {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
         </div>
       </div>
     )

@@ -199,6 +199,15 @@ export const createProjectFeedback = async (projectId, feedbackData) => {
   return response.data
 }
 
+export const uploadRFP = async (formData) => {
+  const response = await api.post('/rfp/upload', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+  return response.data
+}
+
 export const createEmployeeFeedback = async (employeeId, feedbackData) => {
   const response = await api.post(`/employees/${employeeId}/feedback`, feedbackData)
   return response.data
