@@ -65,15 +65,11 @@ const RFPImportWizard = ({ isOpen, onClose, onSuccess }) => {
   }, [isOpen])
   
   useEffect(() => {
-    // Generate team allotment rows based on team structure
+    // Generate empty team allotment rows based on team structure (no AI auto-population)
     if (currentStep === 4 && teamStructure.length > 0) {
-      const hasValidStructure = teamStructure.every(s => s.role_name)
-      const totalRequired = teamStructure.reduce((sum, s) => sum + (s.required_count || 0), 0)
-      
-      if (hasValidStructure && totalRequired > 0 && teamAllotment.length === 0) {
-        generateAISuggestions()
-      } else if (teamAllotment.length === 0) {
-        // Fallback: generate empty rows
+      // Only generate if teamAllotment is empty
+      if (teamAllotment.length === 0) {
+        // Generate empty rows only (no AI suggestions)
         const allotmentRows = []
         teamStructure.forEach(structure => {
           for (let i = 0; i < structure.required_count; i++) {
@@ -91,6 +87,11 @@ const RFPImportWizard = ({ isOpen, onClose, onSuccess }) => {
         })
         setTeamAllotment(allotmentRows)
       }
+    }
+    
+    // Clear AI suggestions when leaving step 4 (team allotment step)
+    if (currentStep !== 4) {
+      setAiSuggestions(null)
     }
   }, [currentStep])
   
@@ -332,6 +333,8 @@ const RFPImportWizard = ({ isOpen, onClose, onSuccess }) => {
     setStructureErrors({})
     setAllotmentErrors({})
     setStep2Errors({})
+    setAiSuggestions(null)
+    setLoadingSuggestions(false)
   }
   
   const validateStep2 = () => {

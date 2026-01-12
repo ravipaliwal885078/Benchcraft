@@ -60,17 +60,10 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
   }, [isOpen])
   
   useEffect(() => {
-    // Generate team allotment rows based on team structure
+    // Generate empty team allotment rows based on team structure (no AI auto-population)
     if (currentStep === 3 && teamStructure.length > 0) {
-      // Only regenerate if teamAllotment is empty or structure changed significantly
-      const hasValidStructure = teamStructure.every(s => s.role_name)
-      const totalRequired = teamStructure.reduce((sum, s) => sum + (s.required_count || 0), 0)
-      
-      // If we have valid structure and no existing allotment, generate AI suggestions
-      if (hasValidStructure && totalRequired > 0 && teamAllotment.length === 0) {
-        generateAISuggestions()
-      } else if (teamAllotment.length === 0) {
-        // Fallback: generate empty rows
+      // Only generate if teamAllotment is empty
+      if (teamAllotment.length === 0) {
         const allotmentRows = []
         teamStructure.forEach(structure => {
           for (let i = 0; i < structure.required_count; i++) {
@@ -88,6 +81,11 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
         })
         setTeamAllotment(allotmentRows)
       }
+    }
+    
+    // Clear AI suggestions when leaving step 3
+    if (currentStep !== 3) {
+      setAiSuggestions(null)
     }
   }, [currentStep])
   
@@ -251,6 +249,8 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
     setTeamAllotment([])
     setStructureErrors({})
     setAllotmentErrors({})
+    setAiSuggestions(null)
+    setLoadingSuggestions(false)
   }
   
   const validateStep1 = () => {

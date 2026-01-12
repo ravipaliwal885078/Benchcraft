@@ -334,7 +334,7 @@ const ManageTeamModal = ({ projectId, projectName, isOpen, onClose, onSuccess })
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl p-6 max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl p-6 max-w-[95vw] w-full mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold text-gray-900">
             Manage Team - {projectName}
@@ -362,7 +362,7 @@ const ManageTeamModal = ({ projectId, projectName, isOpen, onClose, onSuccess })
             </div>
 
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
+              <table className="w-full divide-y divide-gray-200" style={{ minWidth: '1200px' }}>
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">

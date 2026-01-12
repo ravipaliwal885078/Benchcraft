@@ -558,10 +558,13 @@ def main():
         print("SUCCESS: Database initialization completed!")
         print("=" * 60)
         print("\nNext steps:")
-        print("  1. Restart the Flask server")
-        print("  2. The database is ready for use")
+        print("  1. Initialize ChromaDB (optional but recommended):")
+        print("     python backend/init_chromadb.py --repopulate")
+        print("  2. Restart the Flask server")
+        print("  3. The database is ready for use")
         if seed_response.lower() not in ['yes', 'y']:
-            print("  3. Run this script again with 'yes' to seed sample data")
+            print("  4. Run this script again with 'yes' to seed sample data")
+            print("     Or run: python backend/seed_comprehensive.py")
         
     except Exception as e:
         print(f"\nERROR: Database initialization failed: {e}")

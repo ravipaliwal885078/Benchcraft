@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-import { GraduationCap, TrendingUp, BookOpen, DollarSign, Clock, Target, Users, Lightbulb } from 'lucide-react'
-import SkillGapAnalysis from '../components/SkillGapAnalysis'
+import { GraduationCap, TrendingUp, DollarSign, Clock, Target, Users, Lightbulb } from 'lucide-react'
 import { getTrainingRecommendations } from '../services/api'
 import PageHeader from '../components/PageHeader'
 
@@ -280,24 +279,6 @@ const TalentLab = () => {
         </div>
       )}
 
-      {/* Skills Matrix Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
-            <BookOpen className="w-6 h-6 mr-2 text-indigo-600" />
-            Skills Matrix
-          </h2>
-          <div className="space-y-4">
-            <div className="text-sm text-gray-600">
-              Select an employee to view their skill profile and training recommendations.
-            </div>
-            {/* In production, this would be a searchable list of employees */}
-          </div>
-        </div>
-
-        {/* Skill Gap Analysis Component */}
-        <SkillGapAnalysis />
-      </div>
     </div>
   )
 }
