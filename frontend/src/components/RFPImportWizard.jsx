@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { X, ChevronRight, ChevronLeft, Check } from 'lucide-react'
-import { createProject, getEmployees, suggestTeam } from '../services/api'
+import { X, ChevronRight, ChevronLeft, Check, Upload, FileText } from 'lucide-react'
+import { createProject, getEmployees, suggestTeam, uploadRFP } from '../services/api'
 import Step1ProjectDetails from './ProjectWizardSteps/Step1ProjectDetails'
 import Step2TeamStructure from './ProjectWizardSteps/Step2TeamStructure'
 import Step3TeamAllotment from './ProjectWizardSteps/Step3TeamAllotment'
@@ -17,12 +17,19 @@ const ROLE_DEFAULTS = {
   'Designer': { utilization: 75, maxUtilization: 100 }
 }
 
-const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
+const RFPImportWizard = ({ isOpen, onClose, onSuccess }) => {
   const [currentStep, setCurrentStep] = useState(1)
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadedFile, setUploadedFile] = useState(null)
+  const [extractedData, setExtractedData] = useState(null)
   
-  // Step 1: Project Details
+  // Step 1: Upload RFP
+  const [file, setFile] = useState(null)
+  const [fileError, setFileError] = useState(null)
+  
+  // Step 2: Project Details (editable extracted data)
   const [projectDetails, setProjectDetails] = useState({
     client_name: '',
     project_name: '',
@@ -37,20 +44,18 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
     tech_stack: [],
     description: ''
   })
+  const [step2Errors, setStep2Errors] = useState({})
   
-  // Step 1: Errors
-  const [step1Errors, setStep1Errors] = useState({})
-  
-  // Step 2: Team Structure
+  // Step 3: Team Structure
   const [teamStructure, setTeamStructure] = useState([
     { role_name: '', required_count: 1, utilization_percentage: 100 }
   ])
   const [structureErrors, setStructureErrors] = useState({})
   
-  // Step 3: Team Allotment
-  const [teamAllotment, setTeamAllotment] = useState([]) // [{ role_name, employee_id, allocation_percentage, internal_allocation_percentage, billable_percentage, billing_rate, start_date, end_date }]
+  // Step 4: Team Allotment
+  const [teamAllotment, setTeamAllotment] = useState([])
   const [allotmentErrors, setAllotmentErrors] = useState({})
-  const [aiSuggestions, setAiSuggestions] = useState(null) // { suggestions, insights, benefits }
+  const [aiSuggestions, setAiSuggestions] = useState(null)
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
   
   useEffect(() => {
@@ -61,9 +66,10 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
   
   useEffect(() => {
     // Generate empty team allotment rows based on team structure (no AI auto-population)
-    if (currentStep === 3 && teamStructure.length > 0) {
+    if (currentStep === 4 && teamStructure.length > 0) {
       // Only generate if teamAllotment is empty
       if (teamAllotment.length === 0) {
+        // Generate empty rows only (no AI suggestions)
         const allotmentRows = []
         teamStructure.forEach(structure => {
           for (let i = 0; i < structure.required_count; i++) {
@@ -83,14 +89,110 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
       }
     }
     
-    // Clear AI suggestions when leaving step 3
-    if (currentStep !== 3) {
+    // Clear AI suggestions when leaving step 4 (team allotment step)
+    if (currentStep !== 4) {
       setAiSuggestions(null)
     }
   }, [currentStep])
   
+  const loadEmployees = async () => {
+    try {
+      const data = await getEmployees()
+      setEmployees(data.employees || [])
+    } catch (error) {
+      console.error('Failed to load employees:', error)
+    }
+  }
+  
+  const handleFileSelect = (e) => {
+    const selectedFile = e.target.files[0]
+    if (selectedFile) {
+      if (selectedFile.type !== 'application/pdf') {
+        setFileError('Please select a PDF file')
+        setFile(null)
+        return
+      }
+      if (selectedFile.size > 10 * 1024 * 1024) { // 10MB
+        setFileError('File size must be less than 10MB')
+        setFile(null)
+        return
+      }
+      setFile(selectedFile)
+      setFileError(null)
+    }
+  }
+  
+  const handleFileDrop = (e) => {
+    e.preventDefault()
+    const droppedFile = e.dataTransfer.files[0]
+    if (droppedFile) {
+      if (droppedFile.type !== 'application/pdf') {
+        setFileError('Please select a PDF file')
+        return
+      }
+      if (droppedFile.size > 10 * 1024 * 1024) {
+        setFileError('File size must be less than 10MB')
+        return
+      }
+      setFile(droppedFile)
+      setFileError(null)
+    }
+  }
+  
+  const handleUploadAndExtract = async () => {
+    if (!file) {
+      setFileError('Please select a file')
+      return
+    }
+    
+    setUploading(true)
+    setFileError(null)
+    
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      const response = await uploadRFP(formData)
+      setUploadedFile(file)
+      setExtractedData(response.extracted_data)
+      
+      // Populate project details from extracted data
+      const extracted = response.extracted_data || {}
+      setProjectDetails({
+        client_name: extracted.client_name || 'Sample Client',
+        project_name: extracted.project_name || 'New Project',
+        industry_domain: extracted.industry_domain || '',
+        project_type: extracted.project_type || 'T&M',
+        start_date: extracted.start_date || '',
+        end_date: extracted.end_date || '',
+        status: extracted.status || 'PIPELINE',
+        probability: extracted.probability || 0,
+        budget_cap: extracted.budget_cap || '',
+        billing_currency: extracted.billing_currency || 'USD',
+        tech_stack: Array.isArray(extracted.tech_stack) ? extracted.tech_stack : (extracted.tech_stack ? extracted.tech_stack.split(',').map(t => t.trim()) : []),
+        description: extracted.description || 'Project description extracted from RFP document.'
+      })
+      
+      // Populate team structure from extracted data
+      if (extracted.team_structure && Array.isArray(extracted.team_structure) && extracted.team_structure.length > 0) {
+        setTeamStructure(extracted.team_structure.map(ts => ({
+          role_name: ts.role_name || '',
+          required_count: ts.required_count || 1,
+          utilization_percentage: ts.utilization_percentage || 100
+        })))
+      }
+      
+      // Move to next step
+      setCurrentStep(2)
+    } catch (error) {
+      console.error('Failed to upload and extract RFP:', error)
+      setFileError(error.response?.data?.error || 'Failed to extract data from RFP. Please try again.')
+    } finally {
+      setUploading(false)
+    }
+  }
+  
   const generateAISuggestions = async () => {
-    // Validate we have required data
     if (!projectDetails.start_date || teamStructure.length === 0) {
       return
     }
@@ -102,7 +204,6 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
     
     setLoadingSuggestions(true)
     try {
-      // Prepare project details for AI
       const projectDetailsForAI = {
         project_name: projectDetails.project_name || 'New Project',
         description: projectDetails.description || '',
@@ -112,7 +213,6 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
         industry_domain: projectDetails.industry_domain || ''
       }
       
-      // Prepare role requirements
       const roleReqs = teamStructure
         .filter(s => s.role_name && s.required_count > 0)
         .map(s => ({
@@ -137,7 +237,6 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
       const allotmentRows = []
       const suggestionsByRole = {}
       
-      // Group suggestions by role
       response.suggestions.forEach(sug => {
         if (!suggestionsByRole[sug.role_name]) {
           suggestionsByRole[sug.role_name] = []
@@ -145,14 +244,12 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
         suggestionsByRole[sug.role_name].push(sug)
       })
       
-      // Create rows based on role requirements
       teamStructure.forEach(structure => {
         const roleSugs = suggestionsByRole[structure.role_name] || []
         const requiredCount = parseInt(structure.required_count)
         
         for (let i = 0; i < requiredCount; i++) {
           if (i < roleSugs.length) {
-            // Use AI suggestion
             const sug = roleSugs[i]
             allotmentRows.push({
               role_name: structure.role_name,
@@ -165,7 +262,6 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
               end_date: projectDetails.end_date || ''
             })
           } else {
-            // Empty row if not enough suggestions
             allotmentRows.push({
               role_name: structure.role_name,
               employee_id: '',
@@ -181,16 +277,8 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
       })
       
       setTeamAllotment(allotmentRows)
-      
     } catch (error) {
       console.error('Failed to generate AI suggestions:', error)
-      console.error('Error details:', error.response?.data || error.message)
-      // Show user-friendly error message
-      if (error.response?.data?.error) {
-        alert(`Failed to generate AI suggestions: ${error.response.data.error}`)
-      } else {
-        alert('Failed to generate AI suggestions. Please check the console for details.')
-      }
       // Fallback to empty rows
       const allotmentRows = []
       teamStructure.forEach(structure => {
@@ -213,15 +301,6 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
     }
   }
   
-  const loadEmployees = async () => {
-    try {
-      const data = await getEmployees()
-      setEmployees(data.employees || [])
-    } catch (error) {
-      console.error('Failed to load employees:', error)
-    }
-  }
-  
   const handleClose = () => {
     if (window.confirm('Are you sure you want to cancel? All entered data will be lost.')) {
       resetForm()
@@ -231,6 +310,10 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
   
   const resetForm = () => {
     setCurrentStep(1)
+    setFile(null)
+    setUploadedFile(null)
+    setExtractedData(null)
+    setFileError(null)
     setProjectDetails({
       client_name: '',
       project_name: '',
@@ -249,11 +332,12 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
     setTeamAllotment([])
     setStructureErrors({})
     setAllotmentErrors({})
+    setStep2Errors({})
     setAiSuggestions(null)
     setLoadingSuggestions(false)
   }
   
-  const validateStep1 = () => {
+  const validateStep2 = () => {
     const errors = {}
     if (!projectDetails.client_name.trim()) errors.client_name = 'Client Name is required'
     if (!projectDetails.project_name.trim()) errors.project_name = 'Project Name is required'
@@ -274,11 +358,11 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
     if (!projectDetails.description.trim() || projectDetails.description.length < 10) {
       errors.description = 'Description is required (minimum 10 characters)'
     }
-    setStep1Errors(errors)
+    setStep2Errors(errors)
     return Object.keys(errors).length === 0
   }
   
-  const validateStep2 = () => {
+  const validateStep3 = () => {
     const errors = {}
     const roleNames = []
     
@@ -286,7 +370,6 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
       if (!structure.role_name) {
         errors[`${index}_role`] = 'Role is required'
       } else {
-        // Check for duplicate roles
         if (roleNames.includes(structure.role_name)) {
           errors[`${index}_role`] = 'This role is already added'
         } else {
@@ -314,7 +397,7 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
     return Object.keys(errors).length === 0
   }
   
-  const validateStep3 = () => {
+  const validateStep4 = () => {
     const errors = {}
     
     teamAllotment.forEach((allotment, index) => {
@@ -337,11 +420,14 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
     let isValid = false
     
     if (currentStep === 1) {
-      isValid = validateStep1()
+      // Step 1: Upload - handled by handleUploadAndExtract
+      return
     } else if (currentStep === 2) {
       isValid = validateStep2()
     } else if (currentStep === 3) {
       isValid = validateStep3()
+    } else if (currentStep === 4) {
+      isValid = validateStep4()
     }
     
     if (isValid) {
@@ -354,7 +440,7 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
   }
   
   const handleSubmit = async () => {
-    if (!validateStep3()) return
+    if (!validateStep4()) return
     
     setLoading(true)
     try {
@@ -393,22 +479,6 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
     }
   }
   
-  const handleTechStackAdd = (tech) => {
-    if (tech && !projectDetails.tech_stack.includes(tech)) {
-      setProjectDetails({
-        ...projectDetails,
-        tech_stack: [...projectDetails.tech_stack, tech]
-      })
-    }
-  }
-  
-  const handleTechStackRemove = (tech) => {
-    setProjectDetails({
-      ...projectDetails,
-      tech_stack: projectDetails.tech_stack.filter(t => t !== tech)
-    })
-  }
-  
   const handleAddRole = () => {
     setTeamStructure([...teamStructure, { role_name: '', required_count: 1, utilization_percentage: 100 }])
   }
@@ -417,7 +487,6 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
     if (teamStructure.length > 1) {
       const newStructure = teamStructure.filter((_, i) => i !== index)
       setTeamStructure(newStructure)
-      // Clear errors for removed index
       const newErrors = { ...structureErrors }
       Object.keys(newErrors).forEach(key => {
         if (key.startsWith(`${index}_`)) {
@@ -432,7 +501,6 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
     const updated = [...teamStructure]
     updated[index][field] = value
     
-    // Auto-fill utilization based on role
     if (field === 'role_name' && value) {
       const defaults = ROLE_DEFAULTS[value]
       if (defaults) {
@@ -442,7 +510,6 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
     
     setTeamStructure(updated)
     
-    // Clear errors for this field
     const newErrors = { ...structureErrors }
     delete newErrors[`${index}_${field}`]
     setStructureErrors(newErrors)
@@ -453,15 +520,12 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
     updated[index][field] = value
     setTeamAllotment(updated)
     
-    // Clear errors for this field
     const newErrors = { ...allotmentErrors }
     delete newErrors[`${index}_${field}`]
     setAllotmentErrors(newErrors)
   }
   
   const getEmployeesForRole = (roleName) => {
-    // Filter employees based on role - for now, return all employees
-    // In future, you can add role mapping logic here
     return employees
   }
   
@@ -472,16 +536,14 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
       className="fixed inset-0 z-50 flex items-center justify-center"
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
-      {/* Backdrop with blur */}
       <div className="absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm" />
       
-      {/* Modal */}
       <div className="relative bg-white rounded-lg shadow-2xl w-full max-w-[1100px] max-h-[90vh] mx-4 overflow-hidden flex flex-col animate-in fade-in-0 zoom-in-95 duration-300">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
           <div>
-            <h2 className="text-2xl font-bold">Create Project</h2>
-            <p className="text-indigo-100 text-sm mt-1">Step {currentStep} of 4</p>
+            <h2 className="text-2xl font-bold">Import RFP</h2>
+            <p className="text-indigo-100 text-sm mt-1">Step {currentStep} of 5</p>
           </div>
           <button
             onClick={handleClose}
@@ -494,7 +556,7 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
         {/* Stepper */}
         <div className="px-6 py-4 border-b bg-gray-50">
           <div className="flex items-center justify-between">
-            {[1, 2, 3, 4].map((step) => (
+            {[1, 2, 3, 4, 5].map((step) => (
               <div key={step} className="flex items-center flex-1">
                 <div className="flex items-center">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
@@ -511,13 +573,14 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
                   <span className={`ml-2 text-sm font-medium ${
                     currentStep >= step ? 'text-indigo-600' : 'text-gray-500'
                   }`}>
-                    {step === 1 && 'Project Details'}
-                    {step === 2 && 'Team Structure'}
-                    {step === 3 && 'Team Allotment'}
-                    {step === 4 && 'Review'}
+                    {step === 1 && 'Upload RFP'}
+                    {step === 2 && 'Project Details'}
+                    {step === 3 && 'Team Structure'}
+                    {step === 4 && 'Team Allotment'}
+                    {step === 5 && 'Review'}
                   </span>
                 </div>
-                {step < 4 && (
+                {step < 5 && (
                   <ChevronRight className="w-5 h-5 text-gray-400 mx-2" />
                 )}
               </div>
@@ -528,13 +591,77 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
           {currentStep === 1 && (
+            <div className="space-y-6">
+              <div className="text-center">
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">Upload RFP Document</h3>
+                <p className="text-gray-600">Select a PDF file to extract project information</p>
+              </div>
+              
+              <div
+                onDrop={handleFileDrop}
+                onDragOver={(e) => e.preventDefault()}
+                className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
+                  file ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 hover:border-indigo-400'
+                }`}
+              >
+                {file ? (
+                  <div className="space-y-4">
+                    <FileText className="w-16 h-16 mx-auto text-indigo-600" />
+                    <div>
+                      <p className="font-medium text-gray-900">{file.name}</p>
+                      <p className="text-sm text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                    </div>
+                    <button
+                      onClick={() => setFile(null)}
+                      className="text-sm text-indigo-600 hover:text-indigo-800"
+                    >
+                      Remove file
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <Upload className="w-16 h-16 mx-auto text-gray-400" />
+                    <div>
+                      <label className="cursor-pointer">
+                        <span className="text-indigo-600 hover:text-indigo-800 font-medium">Browse files</span>
+                        <span className="text-gray-600"> or drag and drop</span>
+                      </label>
+                      <input
+                        type="file"
+                        accept="application/pdf"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                        id="rfp-file-input"
+                      />
+                    </div>
+                    <p className="text-sm text-gray-500">PDF files only, max 10MB</p>
+                  </div>
+                )}
+              </div>
+              
+              {fileError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <p className="text-red-800 text-sm">{fileError}</p>
+                </div>
+              )}
+              
+              {extractedData && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <p className="text-green-800 text-sm">✓ Data extracted successfully! Review and edit in the next step.</p>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {currentStep === 2 && (
             <Step1ProjectDetails
               data={projectDetails}
               onChange={setProjectDetails}
-              errors={step1Errors}
+              errors={step2Errors}
             />
           )}
-          {currentStep === 2 && (
+          
+          {currentStep === 3 && (
             <Step2TeamStructure
               structure={teamStructure}
               onChange={setTeamStructure}
@@ -544,7 +671,8 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
               errors={structureErrors}
             />
           )}
-          {currentStep === 3 && (
+          
+          {currentStep === 4 && (
             <Step3TeamAllotment
               allotment={teamAllotment}
               employees={employees}
@@ -557,7 +685,8 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
               onGenerateSuggestions={generateAISuggestions}
             />
           )}
-          {currentStep === 4 && (
+          
+          {currentStep === 5 && (
             <Step4Review
               projectDetails={projectDetails}
               teamStructure={teamStructure}
@@ -585,7 +714,25 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
                 Back
               </button>
             )}
-            {currentStep < 4 ? (
+            {currentStep === 1 ? (
+              <button
+                onClick={handleUploadAndExtract}
+                disabled={!file || uploading}
+                className="px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              >
+                {uploading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Extracting...
+                  </>
+                ) : (
+                  <>
+                    Next
+                    <ChevronRight className="w-4 h-4 ml-2" />
+                  </>
+                )}
+              </button>
+            ) : currentStep < 5 ? (
               <button
                 onClick={handleNext}
                 className="px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors flex items-center"
@@ -609,5 +756,4 @@ const ProjectWizard = ({ isOpen, onClose, onSuccess }) => {
   )
 }
 
-
-export default ProjectWizard
+export default RFPImportWizard

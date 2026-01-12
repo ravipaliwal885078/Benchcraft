@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { getEmployees, deleteEmployee } from '../services/api'
 import EmployeeModal from '../components/EmployeeModal'
 import AddSkillsModal from '../components/AddSkillsModal'
+import PageHeader from '../components/PageHeader'
 import RaiseRiskModal from '../components/RaiseRiskModal'
 import { Users, Plus, Search, Filter, Edit, Trash2, Eye, Award, AlertTriangle, Briefcase, DollarSign, Calendar } from 'lucide-react'
 
@@ -138,25 +139,22 @@ const EmployeeList = () => {
 
   return (
     <div className="space-y-6 p-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-primary flex items-center">
-            <Users className="w-8 h-8 mr-3 text-primary" />
-            Employee Management
-          </h1>
-          <p className="text-muted-foreground mt-2">Comprehensive employee directory and management</p>
-        </div>
-        <button
-          onClick={() => {
-            setEditingEmployee(null)
-            setShowAddModal(true)
-          }}
-          className="bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary-dark flex items-center shadow-md"
-        >
-          <Plus className="w-5 h-5 mr-2" />
-          Add Employee
-        </button>
-      </div>
+      <PageHeader
+        title="Employee Management"
+        subtitle="Comprehensive employee directory and management"
+        actions={
+          <button
+            onClick={() => {
+              setEditingEmployee(null)
+              setShowAddModal(true)
+            }}
+            className="bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary-dark flex items-center shadow-md"
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            Add Employee
+          </button>
+        }
+      />
 
       {/* Filters */}
       <div className="bg-white rounded-lg shadow-md p-6">

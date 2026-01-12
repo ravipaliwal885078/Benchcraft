@@ -4,6 +4,7 @@ import { Plus, FileText, DollarSign, Calendar, Edit, Users, X } from 'lucide-rea
 import { getProjects, createProject, updateProject } from '../services/api'
 import ProjectWizard from '../components/ProjectWizard'
 import ManageTeamModal from '../components/ManageTeamModal'
+import PageHeader from '../components/PageHeader'
 
 const Pipeline = () => {
   const navigate = useNavigate()
@@ -100,6 +101,48 @@ const Pipeline = () => {
     setShowTeamModal(true)
   }
 
+  // Calculate progress based on start and end dates
+  const calculateProgress = (project) => {
+    if (!project.start_date || !project.end_date) {
+      return 0
+    }
+    
+    const startDate = new Date(project.start_date)
+    const endDate = new Date(project.end_date)
+    const today = new Date()
+    
+    // Set time to midnight for accurate day calculations
+    startDate.setHours(0, 0, 0, 0)
+    endDate.setHours(0, 0, 0, 0)
+    today.setHours(0, 0, 0, 0)
+    
+    const totalDuration = endDate - startDate
+    const elapsed = today - startDate
+    
+    if (totalDuration <= 0) return 0
+    if (elapsed < 0) return 0
+    if (elapsed > totalDuration) return 100
+    
+    return Math.round((elapsed / totalDuration) * 100)
+  }
+
+  // Get progress bar color based on status
+  const getProgressBarColor = (status) => {
+    switch (status) {
+      case 'PIPELINE':
+        return 'bg-indigo-600' // Keep as is
+      case 'ACTIVE':
+        return 'bg-green-600' // Green for active
+      case 'CLOSED':
+      case 'CANCELLED':
+        return 'bg-red-600' // Red (not too bright, decent)
+      case 'ON_HOLD':
+      case 'ON HOLD':
+        return 'bg-gray-400' // Greyed out
+      default:
+        return 'bg-gray-400'
+    }
+  }
 
   if (loading) {
     return <div className="text-center py-12">Loading pipeline...</div>
@@ -107,19 +150,19 @@ const Pipeline = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-primary">Projects</h1>
-          <p className="text-muted-foreground mt-2">Manage active projects and pipeline</p>
-        </div>
-        <button
-          onClick={() => setShowWizard(true)}
-          className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-dark flex items-center space-x-2"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Create Project</span>
-        </button>
-      </div>
+      <PageHeader
+        title="Projects"
+        subtitle="Manage active projects and pipeline"
+        actions={
+          <button
+            onClick={() => setShowWizard(true)}
+            className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-dark flex items-center space-x-2"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Create Project</span>
+          </button>
+        }
+      />
 
       {/* Project Wizard Modal */}
       <ProjectWizard
@@ -165,7 +208,8 @@ const Pipeline = () => {
                   </span>
                 )}
               </div>
-              {project.probability > 0 && (
+              {/* Show Probability for PIPELINE, Progress for others */}
+              {project.status === 'PIPELINE' && project.probability > 0 ? (
                 <div className="flex items-center text-sm text-gray-600">
                   <span className="mr-2">Probability:</span>
                   <div className="flex-1 bg-gray-200 rounded-full h-2">
@@ -176,7 +220,18 @@ const Pipeline = () => {
                   </div>
                   <span className="ml-2">{project.probability}%</span>
                 </div>
-              )}
+              ) : project.start_date && project.end_date ? (
+                <div className="flex items-center text-sm text-gray-600">
+                  <span className="mr-2">Progress:</span>
+                  <div className="flex-1 bg-gray-200 rounded-full h-2">
+                    <div
+                      className={`${getProgressBarColor(project.status)} h-2 rounded-full`}
+                      style={{ width: `${calculateProgress(project)}%` }}
+                    />
+                  </div>
+                  <span className="ml-2">{calculateProgress(project)}%</span>
+                </div>
+              ) : null}
               {project.tech_stack && (
                 <div className="flex flex-wrap gap-2 mt-2">
                   {project.tech_stack.split(',').map((tech, idx) => (

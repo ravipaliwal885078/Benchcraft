@@ -13,7 +13,7 @@ app.config.from_object(Config)
 CORS(app)
 
 # Register blueprints
-from routes import resources, projects, dashboard, employees, documents, hr, rfp, search, training, risk, monitor
+from routes import resources, projects, dashboard, employees, documents, hr, rfp, search, training, risk, monitor, reports, allocation_reports
 from routes.employees_skills_risks import bp as employee_skills_risks_bp
 app.register_blueprint(resources.bp, url_prefix='/api/v1')
 app.register_blueprint(projects.bp, url_prefix='/api/v1')
@@ -27,6 +27,8 @@ app.register_blueprint(search.bp, url_prefix='/api/v1/search')
 app.register_blueprint(training.bp, url_prefix='/api/v1/training')
 app.register_blueprint(risk.bp, url_prefix='/api/v1/risk')
 app.register_blueprint(monitor.bp, url_prefix='/api/v1/monitor')
+app.register_blueprint(reports.bp, url_prefix='/api/v1/reports')
+app.register_blueprint(allocation_reports.bp, url_prefix='/api/v1/allocation-reports')
 
 @app.route('/')
 def health_check():

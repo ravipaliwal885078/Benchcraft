@@ -8,6 +8,7 @@ from tools.sql_db import SQLDatabaseTool
 from datetime import datetime, date
 from sqlalchemy import and_, or_
 from utils.allocation_validator import validate_allocation_percentage
+from utils.employee_status import get_derived_employee_status, get_current_allocation
 
 bp = Blueprint('employees', __name__)
 db_tool = SQLDatabaseTool()
@@ -63,10 +64,9 @@ def get_employees():
         query = session.query(Employee)
 
         # Apply filters
-        status = request.args.get('status')
-        if status:
-            query = query.filter(Employee.status == EmployeeStatus(status.upper()))
-
+        # Note: Status filter will be applied after deriving status from allocations
+        status_filter = request.args.get('status')
+        
         role_level = request.args.get('role_level')
         if role_level:
             try:
@@ -90,21 +90,21 @@ def get_employees():
 
         result = []
         for emp in employees:
-            # Get current allocation
-            current_allocation = None
-            try:
-                current_allocation = session.query(Allocation).filter(
-                    and_(
-                        Allocation.emp_id == emp.id,
-                        Allocation.start_date <= today,
-                        or_(
-                            Allocation.end_date.is_(None),
-                            Allocation.end_date >= today
-                        )
-                    )
-                ).first()
-            except Exception:
-                pass
+            # Derive status from actual allocations (not stored status field)
+            derived_status = get_derived_employee_status(emp, session, today)
+            
+            # If status filter was provided, filter by derived status
+            if status_filter:
+                try:
+                    requested_status = EmployeeStatus(status_filter.upper())
+                    if derived_status != requested_status:
+                        continue  # Skip this employee if derived status doesn't match filter
+                except ValueError:
+                    # Invalid status filter - ignore it
+                    pass
+            
+            # Get current allocation using utility function
+            current_allocation = get_current_allocation(emp, session, today)
             
             # Get current rate card
             current_rate_card = None
@@ -140,6 +140,9 @@ def get_employees():
                 'is_verified': skill.is_verified
             } for skill in emp.skills]
             
+            # Derive status from actual allocations (not stored status field)
+            derived_status = get_derived_employee_status(emp, session, today)
+            
             # Build employee data
             emp_data = {
                 'id': emp.id,
@@ -153,7 +156,8 @@ def get_employees():
                 'base_location': emp.base_location,
                 'visa_status': emp.visa_status,
                 'remote_pref': emp.remote_pref,
-                'status': emp.status.value if emp.status else None,
+                'status': derived_status.value,  # Use derived status from allocations
+                'stored_status': emp.status.value if emp.status else None,  # Keep stored status for reference
                 'joined_date': emp.joined_date.isoformat() if emp.joined_date else None,
                 'bio_summary': emp.bio_summary,
                 'skills': skills,
@@ -201,13 +205,8 @@ def get_employee(emp_id):
         if not employee:
             return jsonify({'error': 'Employee not found'}), 404
 
-        # Get current allocation
-        current_allocation = session.query(Allocation).filter(
-            and_(
-                Allocation.emp_id == emp_id,
-                Allocation.end_date.is_(None) | (Allocation.end_date >= date.today())
-            )
-        ).first()
+        # Get current allocation using utility function
+        current_allocation = get_current_allocation(employee, session)
 
         # Get skills
         skills = [{
@@ -253,6 +252,9 @@ def get_employee(emp_id):
         # Calculate availability timeline
         availability = calculate_availability_timeline(employee, session)
 
+        # Derive status from actual allocations
+        derived_status = get_derived_employee_status(employee, session)
+        
         return jsonify({
             'employee': {
                 'id': employee.id,
@@ -266,7 +268,8 @@ def get_employee(emp_id):
                 'base_location': employee.base_location,
                 'visa_status': employee.visa_status,
                 'remote_pref': employee.remote_pref,
-                'status': employee.status.value if employee.status else None,
+                'status': derived_status.value,  # Use derived status from allocations
+                'stored_status': employee.status.value if employee.status else None,  # Keep stored status for reference
                 'joined_date': employee.joined_date.isoformat() if employee.joined_date else None,
                 'bio_summary': employee.bio_summary
             },
@@ -476,9 +479,9 @@ def delete_employee(emp_id):
         if not employee:
             return jsonify({'error': 'Employee not found'}), 404
 
-        # Instead of hard delete, mark as inactive or remove from bench
-        # For now, we'll change status to indicate removal
-        employee.status = EmployeeStatus.BENCH  # Or create a TERMINATED status
+        # Sync status based on allocations (if they have active allocations, they'll stay ALLOCATED)
+        from utils.employee_status import sync_employee_status
+        sync_employee_status(employee, session)
 
         session.commit()
 
@@ -587,9 +590,11 @@ def allocate_resource():
         if not project:
             return jsonify({'error': 'Project not found'}), 404
 
-        # Validate allocation (simplified auditor logic)
-        if employee.status != EmployeeStatus.BENCH:
-            return jsonify({'error': f'Employee is not on bench (current status: {employee.status.value})'}), 400
+        # Validate allocation - check derived status, not stored status
+        from utils.employee_status import get_derived_employee_status
+        derived_status = get_derived_employee_status(employee, session)
+        if derived_status != EmployeeStatus.BENCH:
+            return jsonify({'error': f'Employee is not on bench (current status: {derived_status.value})'}), 400
 
         # Check if employee CTC fits within project budget (if budget_cap is set)
         if project.budget_cap and employee.ctc_monthly > project.budget_cap:
@@ -630,8 +635,9 @@ def allocate_resource():
 
         session.add(allocation)
 
-        # Update employee status to allocated
-        employee.status = EmployeeStatus.ALLOCATED
+        # Sync employee status based on actual allocations
+        from utils.employee_status import sync_employee_status
+        sync_employee_status(employee, session)
         session.commit()
 
         # Return success with unmasked employee profile
@@ -646,7 +652,7 @@ def allocate_resource():
                 'role_level': employee.role_level if employee.role_level else None,  # Already a string from DB
                 'base_location': employee.base_location,
                 'ctc_monthly': employee.ctc_monthly,
-                'status': employee.status.value if employee.status else None
+                'status': get_derived_employee_status(employee, session).value
             },
             'allocation': {
                 'project_id': project_id,

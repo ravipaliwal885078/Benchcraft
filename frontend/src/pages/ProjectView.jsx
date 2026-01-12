@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getProject, createProjectFeedback, getEmployees, updateProjectTeam, checkEmployeeAllocation, removeTeamMember } from '../services/api'
+import { getProject, createProjectFeedback, getEmployees, updateProjectTeam, checkEmployeeAllocation, removeTeamMember, exportAllocationReportExcel } from '../services/api'
 import {
   Building, Calendar, DollarSign, Users, TrendingUp,
-  Star, MessageSquare, Target, Clock, Briefcase, X, Plus, Edit
+  Star, MessageSquare, Target, Clock, Briefcase, X, Plus, Edit, FileSpreadsheet, Download
 } from 'lucide-react'
 import ManageTeamModal from '../components/ManageTeamModal'
 
@@ -596,6 +596,49 @@ const ProjectView = () => {
     }).format(amount)
   }
 
+  // Calculate progress based on start and end dates
+  const calculateProgress = (project) => {
+    if (!project.start_date || !project.end_date) {
+      return 0
+    }
+    
+    const startDate = new Date(project.start_date)
+    const endDate = new Date(project.end_date)
+    const today = new Date()
+    
+    // Set time to midnight for accurate day calculations
+    startDate.setHours(0, 0, 0, 0)
+    endDate.setHours(0, 0, 0, 0)
+    today.setHours(0, 0, 0, 0)
+    
+    const totalDuration = endDate - startDate
+    const elapsed = today - startDate
+    
+    if (totalDuration <= 0) return 0
+    if (elapsed < 0) return 0
+    if (elapsed > totalDuration) return 100
+    
+    return Math.round((elapsed / totalDuration) * 100)
+  }
+
+  // Get progress bar color based on status
+  const getProgressBarColor = (status) => {
+    switch (status) {
+      case 'PIPELINE':
+        return 'bg-indigo-600' // Keep as is
+      case 'ACTIVE':
+        return 'bg-green-600' // Green for active
+      case 'CLOSED':
+      case 'CANCELLED':
+        return 'bg-red-600' // Red (not too bright, decent)
+      case 'ON_HOLD':
+      case 'ON HOLD':
+        return 'bg-gray-400' // Greyed out
+      default:
+        return 'bg-gray-400'
+    }
+  }
+
   if (loading) {
     return <div className="text-center py-12 text-muted-foreground">Loading project details...</div>
   }
@@ -630,11 +673,15 @@ const ProjectView = () => {
                 <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(proj.status)}`}>
                   {proj.status}
                 </span>
-                {proj.probability > 0 && (
+                {proj.status === 'PIPELINE' && proj.probability > 0 ? (
                   <span className="text-sm text-gray-600">
                     {proj.probability}% probability
                   </span>
-                )}
+                ) : proj.start_date && proj.end_date ? (
+                  <span className="text-sm text-gray-600">
+                    {calculateProgress(proj)}% progress
+                  </span>
+                ) : null}
               </div>
             </div>
           </div>
@@ -690,6 +737,57 @@ const ProjectView = () => {
         </div>
       </div>
 
+      {/* Allocation Report Actions */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Allocation Reports</h3>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={async () => {
+              try {
+                const today = new Date()
+                const endDate = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
+                await exportAllocationReportExcel(
+                  'internal',
+                  'project',
+                  parseInt(id),
+                  today.toISOString().split('T')[0],
+                  endDate.toISOString().split('T')[0]
+                )
+              } catch (error) {
+                console.error('Failed to export internal report:', error)
+                alert('Failed to export internal report: ' + (error.response?.data?.error || error.message))
+              }
+            }}
+            className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 flex items-center gap-2"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            Export Internal Report
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                const today = new Date()
+                const endDate = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
+                await exportAllocationReportExcel(
+                  'requisition',
+                  'project',
+                  parseInt(id),
+                  today.toISOString().split('T')[0],
+                  endDate.toISOString().split('T')[0]
+                )
+              } catch (error) {
+                console.error('Failed to export requisition report:', error)
+                alert('Failed to export requisition report: ' + (error.response?.data?.error || error.message))
+              }
+            }}
+            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            Export Requisition Report
+          </button>
+        </div>
+      </div>
+
       {/* Project Details */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-lg shadow-md p-6">
@@ -721,12 +819,25 @@ const ProjectView = () => {
               <span className="text-gray-600">End Date:</span>
               <span className="font-medium">{formatDate(proj.end_date)}</span>
             </div>
-            {proj.probability > 0 && (
+            {proj.status === 'PIPELINE' && proj.probability > 0 ? (
               <div className="flex justify-between">
                 <span className="text-gray-600">Probability:</span>
                 <span className="font-medium">{proj.probability}%</span>
               </div>
-            )}
+            ) : proj.start_date && proj.end_date ? (
+              <div className="flex justify-between">
+                <span className="text-gray-600">Progress:</span>
+                <div className="flex items-center gap-2">
+                  <div className="w-24 bg-gray-200 rounded-full h-2">
+                    <div
+                      className={`${getProgressBarColor(proj.status)} h-2 rounded-full`}
+                      style={{ width: `${calculateProgress(proj)}%` }}
+                    />
+                  </div>
+                  <span className="font-medium">{calculateProgress(proj)}%</span>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 

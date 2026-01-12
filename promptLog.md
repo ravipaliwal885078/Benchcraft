@@ -1,6 +1,265 @@
 # Prompt Log - BenchCraft AI Development
 
-This file maintains a log of all user prompts and requirements during the development and enhancement of the BenchCraft AI application.
+This file maintains a log of all user prompts and requirements during the development and enhancement of the BenchCraft AI application, as well as all prompts provided to AI agents.
+
+---
+
+## Agent Prompts - Sorted by Time (Ascending)
+
+### Base Agent Framework
+**Time**: Initial Implementation
+**Agent**: BaseAgent (base_agent.py)
+**Purpose**: Base class for all agents using CrewAI framework
+
+**Agent Definition**:
+- **Framework**: CrewAI Agent
+- **Configuration**: All agents inherit from BaseAgent with role, goal, and backstory
+
+---
+
+### Chat Agent
+**Time**: Initial Implementation
+**Agent**: ChatAgent (chat_agent.py)
+**Purpose**: Conversational AI assistant with database access and web search
+
+**Agent Definition**:
+- **Role**: "Resource Management Assistant"
+- **Goal**: "Answer questions about resource management, employees, projects, and provide insights based on database analysis"
+- **Backstory**: "You are an intelligent assistant with access to the complete resource management database. You can analyze employee data, project information, allocations, skills, and provide strategic recommendations. You also have web search capabilities for general knowledge questions."
+
+**Main Prompt Template** (Used in `_generate_response` method):
+```
+You are a resource management assistant. Answer the following question based on the provided database context and conversation history.
+
+Current Question: {question}
+
+Database Context:
+{json.dumps(db_context.get('data', {}), indent=2)}
+
+Sources: {', '.join(db_context.get('sources', []))}
+{history_context}
+
+IMPORTANT: If the user asks to "list them", "show them", "list them down", "display them", etc., and the Database Context contains a list (like 'bench_employees', 'allocated_employees', 'projects'), you MUST format your response as a clear list. For example, if bench_employees is in the context, list each employee with their name and role.
+```
+
+**General Knowledge Instructions**:
+```
+Instructions:
+- This appears to be a general knowledge question, not related to the resource management database
+- If web search context is provided, use it to answer
+- If web search is not available, provide a helpful response based on your general knowledge
+- Be honest if you cannot provide real-time information (like current news, sports scores, etc.)
+- Do NOT try to answer with database information if the question is clearly about general knowledge
+```
+
+**Database Query Instructions**:
+```
+Instructions:
+- Provide a clear, concise, and helpful answer based on the database context
+- Reference previous conversation if relevant
+- If the user asks to 'list them', 'show them', 'display them', etc., and the database context contains a list (like bench_employees, allocated_employees, projects), format it as a numbered or bulleted list
+- If the data is not available, say so
+- Maintain context from previous messages when answering follow-up questions
+- When the user asks follow-up questions like 'list them down' or 'show me', understand that 'them' refers to the topic from the previous conversation
+```
+
+---
+
+### Training Recommendation Agent
+**Time**: Initial Implementation
+**Agent**: TrainingRecommendationAgent (training_recommendation_agent.py)
+**Purpose**: Recommend upskilling existing employees over hiring new ones
+
+**Agent Definition**:
+- **Role**: "Training & Upskilling Strategist"
+- **Goal**: "Recommend upskilling existing employees over hiring new ones by identifying skill gaps in upcoming projects and suggesting targeted training"
+- **Backstory**: "You are an expert talent development strategist who analyzes project pipeline requirements, current employee skills, and availability to recommend cost-effective training programs. You prioritize upskilling over hiring to reduce costs, improve employee retention, and accelerate project readiness."
+
+**AI Insights Prompt** (Used in `_generate_ai_insights` method):
+```
+Analyze these training recommendations and provide strategic insights:
+
+Total Recommendations: {len(recommendations)}
+Total Cost Savings: ${sum(r.get('cost_savings', 0) for r in recommendations):,.0f}
+
+Top Recommendations:
+{chr(10).join([f"- {r['employee_name']} → {r['required_skill']} for {r['project_name']} (Save ${r.get('cost_savings', 0):,.0f})" for r in recommendations[:5]])}
+
+Provide 2-3 strategic insights in simple, business-friendly language explaining:
+1. Why upskilling is preferred over hiring for these scenarios
+2. Key business advantages (cost, time, retention)
+3. Employee growth and value proposition
+
+Keep it concise and actionable.
+```
+
+---
+
+### Insights Agent
+**Time**: Initial Implementation
+**Agent**: InsightsAgent (insights_agent.py)
+**Purpose**: Generate AI-powered dashboard insights
+
+**Agent Definition**:
+- **Role**: "Dashboard Insights Analyst"
+- **Goal**: "Generate actionable insights from resource management data"
+- **Backstory**: "You are an expert data analyst specializing in resource management, bench optimization, and talent allocation. You analyze patterns in employee utilization, bench time, billing rates, and skill gaps to provide strategic recommendations."
+
+**Note**: This agent uses rule-based insights generation (no explicit LLM prompts found in current implementation)
+
+---
+
+### Team Suggestion Agent
+**Time**: Initial Implementation
+**Agent**: TeamSuggestionAgent (team_suggestion_agent.py)
+**Purpose**: AI-powered team allocation recommendations
+
+**Agent Definition**:
+- **Role**: "Team Allocation Strategist"
+- **Goal**: "Suggest optimal team members for projects based on availability, skills, experience, and allocation constraints"
+- **Backstory**: "You are an expert resource manager who analyzes employee profiles, availability, skills, and project requirements to suggest the best team composition."
+
+**Team Insights Prompt** (Used in `_generate_insights` method):
+```
+Based on the following project and team suggestions, provide a brief (2-3 sentences) insight explaining why these specific employees were suggested for their roles. Focus on:
+- Skill alignment with project requirements
+- Domain experience relevance
+- Availability and allocation optimization
+- Team composition strengths
+
+{context}
+
+Provide only the insight explanation, no markdown formatting.
+```
+
+**Team Benefits Prompt** (Used in `_generate_benefits` method):
+```
+Based on the suggested team composition, provide a brief (2-3 sentences) explanation of the benefits of this team setup. Focus on:
+- How this team composition benefits the project
+- Resource optimization advantages
+- Skill coverage and expertise
+- Risk mitigation
+
+{context}
+
+Provide only the benefits explanation, no markdown formatting.
+```
+
+---
+
+### Matchmaker Agent
+**Time**: Initial Implementation
+**Agent**: MatchmakerAgent (matchmaker.py)
+**Purpose**: PII Guard & Anonymization for blind allocation
+
+**Agent Definition**:
+- **Role**: "Fairness Matchmaker"
+- **Goal**: "Anonymize employee data to ensure blind, merit-based allocation"
+- **Backstory**: "You are responsible for maintaining fairness in the allocation process by masking PII until allocation is confirmed."
+
+**Note**: No explicit LLM prompts - uses rule-based anonymization logic
+
+---
+
+### Mentor Agent
+**Time**: Initial Implementation
+**Agent**: MentorAgent (mentor.py)
+**Purpose**: Training & Career Path Recommendations
+
+**Agent Definition**:
+- **Role**: "Career Mentor"
+- **Goal**: "Recommend training paths to help employees match project requirements"
+- **Backstory**: "You are an expert career advisor who analyzes skill gaps and recommends targeted training to improve project match rates."
+
+**Note**: No explicit LLM prompts - uses rule-based training recommendations
+
+---
+
+### Scout Agent
+**Time**: Initial Implementation
+**Agent**: ScoutAgent (scout.py)
+**Purpose**: Semantic Search Engine for talent discovery
+
+**Agent Definition**:
+- **Role**: "Talent Scout"
+- **Goal**: "Find the best matching employees for job descriptions using semantic search"
+- **Backstory**: "You are an expert at understanding job requirements and matching them to employee profiles using advanced vector search technology."
+
+**Note**: No explicit LLM prompts - uses vector search tool
+
+---
+
+### Resume Parser Agent
+**Time**: Initial Implementation
+**Agent**: ResumeParserAgent (resume_parser_agent.py)
+**Purpose**: Extract structured employee data from resumes
+
+**Agent Definition**:
+- **Role**: "Resume Parser"
+- **Goal**: "Extract structured employee data from resumes"
+- **Backstory**: "An expert in parsing resumes and extracting key information for onboarding."
+
+**Note**: Uses PDFParserTool and GeminiEmbeddingTool - prompts are in the tools, not the agent itself
+
+---
+
+### Skill Detection Agent
+**Time**: Initial Implementation
+**Agent**: SkillDetectionAgent (skill_detection_agent.py)
+**Purpose**: Assign confidence scores and suggest proficiency for skills from resume text
+
+**Agent Definition**:
+- **Role**: "Skill Detector"
+- **Goal**: "Detect skills and assign confidence/proficiency from resume text"
+- **Backstory**: "An expert in analyzing resumes to extract and score skills."
+
+**Note**: Currently uses stub implementation - prompts would be in GeminiEmbeddingTool
+
+---
+
+### Ghostwriter Agent
+**Time**: Initial Implementation
+**Agent**: GhostwriterAgent (ghostwriter.py)
+**Purpose**: Resume Tailoring - Generate client-specific bio PDFs
+
+**Agent Definition**:
+- **Role**: "Resume Ghostwriter"
+- **Goal**: "Create client-specific bio PDFs highlighting relevant industry experience"
+- **Backstory**: "You are an expert at tailoring resumes and bios to emphasize relevant experience for specific clients and industries."
+
+**System Prompt**:
+```
+You are an expert resume writer specializing in tailoring bios for specific industries.
+```
+
+**Main Prompt Template** (Used in `generate_tailored_bio` method):
+```
+{system_prompt}
+
+Rewrite the following employee bio to emphasize experience relevant to the {client_industry} industry.
+Highlight any projects, skills, or achievements that would be particularly valuable for {client_industry} clients.
+Keep it professional and concise (2-3 paragraphs).
+
+{context}
+```
+
+---
+
+### Auditor Agent
+**Time**: Initial Implementation
+**Agent**: AuditorAgent (auditor.py)
+**Purpose**: Financial Constraint Checker - Validate allocations against budget and rules
+
+**Agent Definition**:
+- **Role**: "Financial Auditor"
+- **Goal**: "Validate allocations against budget constraints and business rules"
+- **Backstory**: "You are a meticulous financial auditor ensuring all allocations comply with budget limits and employee availability."
+
+**Note**: No explicit LLM prompts - uses rule-based validation logic
+
+---
+
+## User Prompts - Sorted by Time (Ascending)
 
 ---
 
@@ -527,21 +786,417 @@ Provided comprehensive explanation of Allocation model and related tables includ
 
 ---
 
-### UI Updates: Navigation and Tab Changes
+## 2026-01-11 - Reports & Analytics Dashboard Implementation
+
+### Requirement: Comprehensive Reporting & Analytics Dashboard
 
 **Original Prompt:**
-> 1: Remove Canvas Tab
-> 2: Rename marketplace tab to "Talent Search"
-> 3: Project Tab:- The page heading contains the word Pipeline still. Please update the text to Projects.
+> Create a new tab named REPORTS. For them the below is the requirement. Maintain the UI consistency. ## 1. Objective Design and implement a **Reporting & Analytics Dashboard** for a **Resource Allocation Application** that provides actionable insights across **Projects, Employees, and Risks**. The dashboard should help leadership and delivery managers **identify risk early, optimize resource utilization, improve ROI, and support data-driven hiring and training decisions**. The dashboard must cover: ### A. Project Performance & ROI * Identify projects with **low remaining resource balance** (capacity vs time left) * Highlight **projects at risk** due to delivery, staffing, or employee-level risks * Identify **low-ROI projects** * Identify **high-ROI / star projects** using multiple performance lenses ### B. Employee Performance & Workforce Planning * Identify **employees at risk**, under-utilized, or likely to exit * Identify **skill gaps** for upcoming pipeline projects * Identify **employees suitable for upskilling** for future needs * Identify **low-ROI employees** based on **profit-to-allocation ratio** * Identify **top-performing employees** considering **internal allocation percentage** and profit contribution * Analyze **profit efficiency** by comparing profit generated against internal allocation percentage ### C. Risk & Financial Health * Provide a consolidated view of **project and employee risks** * Highlight **financially underperforming projects** * Identify **employees with weak gross-profit contribution relative to their allocation**
 
 **Implementation:**
-- Removed Canvas tab from navigation menu and routes
-- Renamed "Marketplace" tab to "Talent Search" in navigation
-- Updated Pipeline page heading from "Pipeline" to "Projects"
-- Updated Pipeline page subtitle to "Manage active projects and pipeline"
+- Created comprehensive Reports dashboard with three main tabs:
+  1. Project Intelligence & ROI Analysis
+  2. Employee Intelligence & Workforce Optimization
+  3. Risk & Financial Performance Management
+- Implemented all backend endpoints in `backend/routes/reports.py`
+- Created frontend Reports page with tabbed interface
+- Integrated with existing UI patterns and PageHeader component
 
-**Files Modified:**
-- `frontend/src/App.jsx` - Removed Canvas import, route, and navigation link; renamed Marketplace to Talent Search
-- `frontend/src/pages/Pipeline.jsx` - Updated page heading and subtitle
+**Files Created:**
+- `backend/routes/reports.py` - All report endpoints
+- `frontend/src/pages/Reports.jsx` - Main reports dashboard page
+- `frontend/src/services/api.js` - Added all report API functions
 
 ---
+
+### Bug Fix: RiskRegister Attribute Error
+
+**Original Prompt:**
+> {"error":"type object 'RiskRegister' has no attribute 'proj_id'"}
+
+**Root Cause:** The `RiskRegister` model uses `project_id` (not `proj_id`)
+
+**Fixes Applied:**
+- Changed `RiskRegister.proj_id` → `RiskRegister.project_id` (2 occurrences)
+- Changed `risk.proj_id` → `risk.project_id` (3 occurrences)
+
+**Files Modified:**
+- `backend/routes/reports.py`
+
+**Migration Script Created:**
+- `backend/migrate_risk_register_schema.py` - Ensures database schema matches model
+
+---
+
+### Bug Fix: EmployeeSkill Attribute Error
+
+**Original Prompt:**
+> {"error":"'EmployeeSkill' object has no attribute 'proficiency_level'"} Getting this error at Reports-> Employee intelligence
+
+**Root Cause:** The `EmployeeSkill` model uses `proficiency` (not `proficiency_level`)
+
+**Fixes Applied:**
+- Changed `skill.proficiency_level` → `skill.proficiency` (line 522)
+- Changed `s.proficiency_level` → `s.proficiency` (line 608)
+
+**Files Modified:**
+- `backend/routes/reports.py`
+
+---
+
+## 2026-01-11 - Employee Status Derivation
+
+### Requirement: Fix Employee Status Inconsistency
+
+**Original Prompt:**
+> Whereever we are displaying the employee like the below snippet, the status for Aditya Iyer is shown as ALLOCATED. But on his profile he is not. And against the prroject no project is tagged for him as well. Please study all structure and their mappings and update. If required generate and use functions for handling derived values.
+
+**Implementation:**
+- Created `backend/utils/employee_status.py` with derived status logic
+- Implemented `get_derived_employee_status()` function that calculates status from active allocations
+- Implemented `sync_employee_status()` function to update database field
+- Updated all routes to use derived status instead of stored status
+- Created migration script to sync existing data
+
+**Files Created:**
+- `backend/utils/employee_status.py` - Status derivation utilities
+- `backend/migrate_sync_employee_status.py` - Migration script
+
+**Files Modified:**
+- `backend/routes/employees.py` - Uses derived status
+- `backend/routes/hr.py` - Uses derived status
+- `backend/routes/resources.py` - Uses sync_employee_status
+- `backend/tools/sql_db.py` - Uses sync_employee_status
+
+---
+
+## 2026-01-11 - Allocation Report Enhancements
+
+### Requirement: Clickable Links in Allocation Report
+
+**Original Prompt:**
+> Project Allocation Manager Report for this page, update where the employee name is displayed, add a link to redirect to employee summary page. And if project is aligned, add linkn on project name to redirect to project summary page.
+
+**Implementation:**
+- Added `Link` components from react-router-dom
+- Employee names now link to `/employees/:id`
+- Project names link to `/projects/:id` when available
+- Maintains consistent styling with other pages
+
+**Files Modified:**
+- `frontend/src/pages/AllocationReport.jsx` - Added clickable links
+
+---
+
+### Requirement: Consistent Header Styling
+
+**Original Prompt:**
+> I see in each tab there are headers displayed in a differeent styling which is not consistant so please either make a generic header component or use similar header in each tab
+
+**Implementation:**
+- Created reusable `PageHeader` component
+- Integrated PageHeader across all pages
+- Supports variants: 'default', 'card', 'simple'
+- Supports custom actions, back links, icons, and title colors
+
+**Files Created:**
+- `frontend/src/components/PageHeader.jsx` - Reusable header component
+
+**Files Modified:**
+- All page components to use PageHeader
+
+---
+
+### Requirement: Allocation Reports - Two Levels and Two Types
+
+**Original Prompt:**
+> we need to generate location report The allocation report will be generated on the two levels. The project level and overall level. There Are Two types of Allocation reports Internal Allocation report and Requisition Report. one Global Action will be on Allocation report tab that is internal only and on project summary both actions are visible Important Notes Trainee Exclusion: All is_trainee = TRUE allocations are excluded from client reports as they are not billable Internal Allocation: The internal_allocation_percentage field is never shown to clients - only for internal use Rate Card Privacy: Sensitive rate card details beyond billing rate should be filtered Risk Filtering: Only client-relevant risks shown (not internal HR risks like resignation) Financial Data: Gross margin and cost details are optional based on client agreement here is the Excel Structure Excel Report: Resource Allocation Report (Single Sheet)Section A: Report Header (Rows 1-6)FieldSourceClient Nameproject.client_nameProject Nameproject.project_nameProject Codeproject.project_codeReporting PeriodStart Date - End DateReport DateCurrent DateCurrencyproject.billing_currencySection B: Resource Details (Starting Row 8)ColField NameSource/CalculationFormatASr. No.Auto-incrementNumberBEmployee Nameemployee.first_name + " " + employee.last_nameTextCRoleemployee.role_levelTextDPrimary SkillsTop 3 from employee_skillsTextEStart Dateallocation.start_dateDateFEnd Dateallocation.end_date or "Ongoing"DateGAllocation %allocation.allocation_percentagePercentageHBillable %allocation.billable_percentagePercentageIMonthly Hours(160 × allocation_percentage) / 100NumberJBillable Hours(160 × allocation% × billable%) / 10000NumberKHourly Rateallocation.billing_rateCurrencyLMonthly Amounthourly_rate × billable_hoursCurrencyMPeriod Revenueallocation_financials.estimated_revenueCurrencyNUtilizationUnder-utilized/Optimal/Over-allocatedTextOStatusOn-Track/Delayed/AheadTextSection C: Summary (Bottom Rows)MetricCalculationTotal ResourcesCOUNT(employees)Total Monthly HoursSUM(Monthly Hours)Total Billable HoursSUM(Billable Hours)Total Monthly AmountSUM(Monthly Amount)Average Allocation %AVG(Allocation %)Average Billable %AVG(Billable %)
+
+**Implementation:**
+- Created `backend/routes/allocation_reports.py` with two endpoints:
+  - `/generate` - JSON report data
+  - `/export-excel` - Excel file download
+- Supports `report_type` ('internal'/'requisition') and `level` ('overall'/'project')
+- Filters trainees from requisition reports
+- Conditionally includes internal_allocation_percentage based on report type
+- Generates Excel with proper formatting for percentages and currency
+- Added Excel export button to AllocationReport page
+- Added export actions to ProjectView page
+
+**Files Created:**
+- `backend/routes/allocation_reports.py` - Allocation report generation
+- Updated `backend/requirements.txt` - Added openpyxl
+
+**Files Modified:**
+- `frontend/src/pages/AllocationReport.jsx` - Added report type/level selection and Excel export
+- `frontend/src/pages/ProjectView.jsx` - Added allocation report export buttons
+- `frontend/src/services/api.js` - Added allocation report API functions
+- `backend/app.py` - Registered allocation_reports blueprint
+
+---
+
+### Bug Fix: SQLAlchemy Join Ambiguity
+
+**Original Prompt:**
+> Can't determine join between 'allocations' and 'employees'; tables have more than one foreign key constraint relationship between them. Please specify the 'onclause' of this join explicitly. The database tables may need to be initialized.
+
+**Resolution:**
+- Updated join statements to explicitly specify join conditions:
+  - `join(Employee, Allocation.emp_id == Employee.id)`
+  - `join(Project, Allocation.proj_id == Project.id)`
+
+**Files Modified:**
+- `backend/routes/allocation_reports.py` - Fixed join conditions
+
+---
+
+## 2026-01-11 - Risk Tab Enhancement
+
+### Requirement: Risk Card View
+
+**Original Prompt:**
+> on The Risk Tab There Should be a card view or list of card view for the risks on the projects and employees and when clicking on them it will redirect to the project or employee linkes should be on project or employee name displayed under risk. make a good ui that is consistant with all other ui of employees etca
+
+**Implementation:**
+- Created `RiskCardView` component with card-based layout
+- Displays consolidated project and employee risks
+- Includes summary cards by severity
+- Filtering by severity, risk type, and status
+- Clickable links to projects and employees
+- Consistent UI with other pages
+
+**Files Created:**
+- `frontend/src/components/RiskCardView.jsx` - Risk card view component
+
+**Files Modified:**
+- `frontend/src/pages/Risk.jsx` - Integrated RiskCardView
+- `backend/routes/reports.py` - Enhanced consolidated risks endpoint to include client_name
+
+---
+
+### Requirement: Remove Notice Period Check Tab
+
+**Original Prompt:**
+> the Notice period Check tab should be removed from the Risks Tab
+
+**Implementation:**
+- Removed NoticePeriodRisk component from Risk page
+- Removed view toggle
+- Risk page now displays only RiskCardView directly
+
+**Files Modified:**
+- `frontend/src/pages/Risk.jsx` - Removed NoticePeriodRisk and toggle
+
+---
+
+## 2026-01-11 - UI Alignment Fixes
+
+### Requirement: Fix Alignment in Allocation Report
+
+**Original Prompt:**
+> on The @frontend/src/pages/AllocationReport.jsx Allign the contents shown in image Properly
+
+**Implementation:**
+- Refactored filter controls layout
+- Wrapped each control group in `flex flex-col`
+- Added invisible labels for buttons to match height
+- Added fixed-height divs for consistent vertical alignment
+- All inputs, buttons, and helper text now align properly
+
+**Files Modified:**
+- `frontend/src/pages/AllocationReport.jsx` - Fixed alignment with flexbox utilities
+
+---
+
+### Requirement: Fix Include Bench Employees Checkbox
+
+**Original Prompt:**
+> @frontend/src/pages/AllocationReport.jsx Fix This includeBench employees Choice Also
+
+**Implementation:**
+- Updated checkbox to use standard Tailwind styling
+- Vertically centered within fixed-height container
+- Consistent with other form controls
+
+**Files Modified:**
+- `frontend/src/pages/AllocationReport.jsx` - Fixed checkbox alignment
+
+---
+
+## 2026-01-11 - Navigation Updates
+
+### Requirement: Remove Talent Search Tab
+
+**Original Prompt:**
+> Remove the talent Search tab From The Tabs
+
+**Implementation:**
+- Removed "Talent Search" navigation link from App.jsx
+- Market route still exists but not accessible via main navigation
+
+**Files Modified:**
+- `frontend/src/App.jsx` - Removed Market/Talent Search navigation link
+
+---
+
+## 2026-01-11 - RFP Import Wizard Implementation
+
+### Requirement: Project Onboarding via RFP Document
+
+**Original Prompt:**
+> Project onboarding via RFP 
+> 
+> The system already has a working Manual Project Onboarding flow implemented using a wizard with 4 milestones: 
+> 1) Project Details 
+> 2) Team Structure 
+> 3) Team Allotment 
+> 4) Review & Submit 
+> 
+> TASK: 
+> Implement a new project onboarding method: "Onboard Project via RFP Document" that extracts onboarding data from an uploaded PDF RFP and then reuses the same manual onboarding wizard screens/components. 
+> 
+> ACTION NAME: 
+> Add a new button on Projects tab header (next to "Create Project"): 
+> ✅ "Import RFP"  (short, clear, professional) 
+> 
+> HIGH-LEVEL FLOW: 
+> When user clicks "Import RFP": 
+> - Open a centered modal (large size) with a 5-step wizard (milestones). 
+> - The flow should: 
+>   1) Upload RFP PDF 
+>   2) AI Extract & Preview data 
+>   3) Team Structure 
+>   4) Team Allotment 
+>   5) Review & Submit 
+> 
+> CRITICAL REQUIREMENT: 
+> Reuse existing manual onboarding components and validations. 
+> Do NOT rewrite or duplicate the forms. 
+> Refactor manual onboarding into reusable components so both flows (manual + RFP) use the same UI and logic.
+
+**Implementation:**
+- Refactored ProjectWizard to extract reusable step components:
+  - `Step1ProjectDetails.jsx`
+  - `Step2TeamStructure.jsx`
+  - `Step3TeamAllotment.jsx`
+  - `Step4Review.jsx`
+- Created `RFPImportWizard.jsx` with 5-step flow:
+  1. Upload RFP PDF (with drag & drop, file validation)
+  2. Project Details (editable extracted data)
+  3. Team Structure (reuses Step2TeamStructure)
+  4. Team Allotment (reuses Step3TeamAllotment)
+  5. Review & Submit (reuses Step4Review)
+- Updated backend RFP route to return structured project data
+- Added "Create Project With RFP" button to Projects page header
+- All validations and business rules reused from manual flow
+
+**Files Created:**
+- `frontend/src/components/RFPImportWizard.jsx` - RFP import wizard
+- `frontend/src/components/ProjectWizardSteps/Step1ProjectDetails.jsx` - Extracted component
+- `frontend/src/components/ProjectWizardSteps/Step2TeamStructure.jsx` - Extracted component
+- `frontend/src/components/ProjectWizardSteps/Step3TeamAllotment.jsx` - Extracted component
+- `frontend/src/components/ProjectWizardSteps/Step4Review.jsx` - Extracted component
+
+**Files Modified:**
+- `frontend/src/components/ProjectWizard.jsx` - Refactored to use extracted components
+- `frontend/src/pages/Projects.jsx` - Added "Create Project With RFP" button
+- `backend/routes/rfp.py` - Enhanced to return structured project data
+- `frontend/src/services/api.js` - Added uploadRFP function
+
+---
+
+## 2026-01-11 - Database Migration Consolidation
+
+### Requirement: Compile All Migrations and Seed
+
+**Original Prompt:**
+> compile all the migration files and seed.db into one
+
+**Implementation:**
+- Created `backend/init_database.py` - Consolidated database initialization script
+- Combines all migrations in correct order:
+  1. Create all tables
+  2. Risk Register Schema migration
+  3. Project Wizard Fields migration
+  4. Rate Card ID migration
+  5. Allocation & Billable Percentage migration
+  6. Shadow & Internal Allocation migration
+  7. Total Hours in Period migration
+  8. Set Internal Allocation Percentage migration
+  9. Sync Employee Status migration
+  10. Seed database (optional)
+
+**Files Created:**
+- `backend/init_database.py` - Consolidated migration and seed script
+
+---
+
+## 2026-01-11 - Syntax Error Fix
+
+### Bug Fix: RFP Route Syntax Error
+
+**Original Prompt:**
+> @python (757-775)  getting this error, solve this asap
+
+**Error:**
+```
+SyntaxError: closing parenthesis ')' does not match opening parenthesis '{' on line 38
+```
+
+**Resolution:**
+- Fixed syntax error in `backend/routes/rfp.py` line 41
+- Changed closing parenthesis `)` to comma `,` in dictionary definition
+
+**Files Modified:**
+- `backend/routes/rfp.py` - Fixed syntax error
+
+---
+
+## 2026-01-11 - Button Visibility Fix
+
+### Requirement: Add Create Project With RFP Button
+
+**Original Prompt:**
+> Add button To Create Project With RFP Next To Create Project Button On Projects Tab
+
+**Implementation:**
+- Added "Create Project With RFP" button next to "Create Project" button
+- Both buttons visible in Projects page header
+- Improved PageHeader responsiveness for better button visibility
+
+**Files Modified:**
+- `frontend/src/pages/Projects.jsx` - Added button and reordered
+- `frontend/src/components/PageHeader.jsx` - Improved responsive layout
+
+---
+
+## 2026-01-11 - Prompt Log Update
+
+### Requirement: Update Prompt Log with All Agent Prompts
+
+**Original Prompt:**
+> Update The promptLog fIle With All the Prompts We Have Provided to All agents By Time Sorted in ascending time for this project
+
+**Implementation:**
+- Added comprehensive "Agent Prompts" section at the top
+- Documented all agent definitions (role, goal, backstory)
+- Extracted and documented all LLM prompts from agent files
+- Organized by agent type and time (where applicable)
+- Maintained chronological order of user prompts
+
+**Files Modified:**
+- `promptLog.md` - Added agent prompts section and updated with all prompts
+
+---
+
+## Summary
+
+This prompt log now contains:
+1. **Agent Prompts Section**: All prompts provided to AI agents, including:
+   - Agent definitions (role, goal, backstory)
+   - LLM prompt templates used in agent methods
+   - System prompts and instructions
+2. **User Prompts Section**: All user requirements and prompts in chronological order
+3. **Implementation Details**: For each prompt, includes what was implemented and which files were modified
+
+All prompts are sorted by time in ascending order, with agent prompts listed first, followed by user prompts chronologically.

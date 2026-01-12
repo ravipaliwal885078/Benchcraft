@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getComprehensiveDashboard, getProjects } from '../services/api'
 import ChatAgent from '../components/ChatAgent'
 import { Link } from 'react-router-dom'
+import PageHeader from '../components/PageHeader'
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ComposedChart, Area
@@ -81,42 +82,108 @@ const Dashboard = () => {
 
     try {
       // Get all projects
-      const projects = await getProjects()
+      const projectsData = await getProjects()
+      const projects = projectsData.projects || []
       
-      // Filter projects that match employee's skills and domain
-      const employeeSkills = employee.primary_domain?.toLowerCase() || ''
+      // Get employee details for better matching
+      const employeeDomain = employee.primary_domain?.toLowerCase() || ''
       const employeeRole = employee.role?.toLowerCase() || ''
       
-      // Simple matching logic: match by domain, role, or status
+      // Enhanced matching logic
       const matches = projects
         .filter(project => {
-          // Match if project is ACTIVE or PIPELINE
+          // Only match ACTIVE or PIPELINE projects
           if (!['ACTIVE', 'PIPELINE'].includes(project.status)) return false
           
-          // Match by domain
-          if (project.industry_domain && employeeSkills) {
-            if (project.industry_domain.toLowerCase().includes(employeeSkills) || 
-                employeeSkills.includes(project.industry_domain.toLowerCase())) {
-              return true
+          let matchScore = 0
+          
+          // Match by domain (high weight)
+          if (project.industry_domain && employeeDomain && employeeDomain !== 'n/a') {
+            const projectDomain = project.industry_domain.toLowerCase()
+            if (projectDomain.includes(employeeDomain) || employeeDomain.includes(projectDomain)) {
+              matchScore += 50
             }
           }
           
-          // Match by tech stack if available
+          // Match by role level (medium weight)
+          if (project.role_requirements && employeeRole && employeeRole !== 'n/a') {
+            const roleReqs = Array.isArray(project.role_requirements) 
+              ? project.role_requirements 
+              : JSON.parse(project.role_requirements || '[]')
+            
+            for (const req of roleReqs) {
+              const reqRole = req.role_name?.toLowerCase() || ''
+              if (reqRole.includes(employeeRole) || employeeRole.includes(reqRole)) {
+                matchScore += 30
+                break
+              }
+            }
+          }
+          
+          // Match by tech stack (low weight)
           if (project.tech_stack && employeeRole) {
             const techStack = project.tech_stack.toLowerCase()
-            if (techStack.includes(employeeRole) || employeeRole.includes(techStack.split(',')[0]?.toLowerCase())) {
-              return true
+            // Check if role matches any tech in stack
+            const techTerms = techStack.split(',').map(t => t.trim().toLowerCase())
+            for (const tech of techTerms) {
+              if (tech.includes(employeeRole) || employeeRole.includes(tech)) {
+                matchScore += 20
+                break
+              }
             }
           }
           
-          return false
+          // Only return if there's a meaningful match
+          return matchScore > 0
         })
-        .slice(0, 10) // Limit to top 10 matches
-        .map(project => ({
-          ...project,
-          matchScore: Math.floor(Math.random() * 30) + 70 // Simulated match score 70-100
-        }))
+        .map(project => {
+          // Calculate match score
+          let matchScore = 0
+          
+          if (project.industry_domain && employeeDomain && employeeDomain !== 'n/a') {
+            const projectDomain = project.industry_domain.toLowerCase()
+            if (projectDomain.includes(employeeDomain) || employeeDomain.includes(projectDomain)) {
+              matchScore += 50
+            }
+          }
+          
+          if (project.role_requirements && employeeRole && employeeRole !== 'n/a') {
+            try {
+              const roleReqs = Array.isArray(project.role_requirements) 
+                ? project.role_requirements 
+                : JSON.parse(project.role_requirements || '[]')
+              
+              for (const req of roleReqs) {
+                const reqRole = req.role_name?.toLowerCase() || ''
+                if (reqRole.includes(employeeRole) || employeeRole.includes(reqRole)) {
+                  matchScore += 30
+                  break
+                }
+              }
+            } catch (e) {
+              // Ignore parsing errors
+            }
+          }
+          
+          if (project.tech_stack && employeeRole) {
+            const techStack = project.tech_stack.toLowerCase()
+            const techTerms = techStack.split(',').map(t => t.trim().toLowerCase())
+            for (const tech of techTerms) {
+              if (tech.includes(employeeRole) || employeeRole.includes(tech)) {
+                matchScore += 20
+                break
+              }
+            }
+          }
+          
+          return {
+            ...project,
+            matchScore: Math.min(100, matchScore)
+          }
+        })
+        .filter(p => p.matchScore > 0) // Only show projects with matches
         .sort((a, b) => b.matchScore - a.matchScore)
+        .slice(0, 10) // Limit to top 10 matches
 
       setMatchedProjects(matches)
     } catch (err) {
@@ -168,23 +235,24 @@ const Dashboard = () => {
     <div className="min-h-screen bg-gray-50 p-5">
       <div className="max-w-[1800px] mx-auto space-y-6">
         {/* Header */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-1">🎯 Resource Management Dashboard</h1>
-            <p className="text-gray-600 text-sm">Real-time insights powered by AI • Last updated: {new Date(dashboardData.last_updated).toLocaleTimeString()}</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="bg-gray-50 px-5 py-2 rounded-lg text-gray-700 text-sm font-medium border border-gray-200">
-              📅 {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-            </div>
-            <button
-              onClick={loadDashboardData}
-              className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold text-sm hover:bg-blue-700 transition shadow-md hover:shadow-lg"
-            >
-              ↻ Refresh Data
-            </button>
-          </div>
-        </div>
+        <PageHeader
+          title="🎯 Resource Management Dashboard"
+          subtitle={`Real-time insights powered by AI • Last updated: ${new Date(dashboardData.last_updated).toLocaleTimeString()}`}
+          variant="card"
+          actions={
+            <>
+              <div className="bg-gray-50 px-5 py-2 rounded-lg text-gray-700 text-sm font-medium border border-gray-200">
+                📅 {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+              </div>
+              <button
+                onClick={loadDashboardData}
+                className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold text-sm hover:bg-blue-700 transition shadow-md hover:shadow-lg"
+              >
+                ↻ Refresh Data
+              </button>
+            </>
+          }
+        />
 
         {/* KPI Cards - Updated styling like AllocationReport */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
@@ -312,10 +380,10 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Charts Grid - Only 2 charts */}
+        {/* Charts Grid - Enhanced Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Bench Trend Chart */}
-          <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+          {/* Bench Trend Chart - Enhanced */}
+          <div className="lg:col-span-1 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
             <div className="flex justify-between items-center mb-5 pb-4 border-b border-gray-200">
               <div>
                 <h3 className="text-lg font-bold text-gray-900">Bench Trend & Utilization Forecast</h3>
@@ -326,9 +394,9 @@ const Dashboard = () => {
                   <button
                     key={filter}
                     onClick={() => setTimeFilter(filter)}
-                    className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
                       timeFilter === filter
-                        ? 'bg-blue-600 text-white'
+                        ? 'bg-blue-600 text-white shadow-sm'
                         : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
                     }`}
                   >
@@ -338,30 +406,62 @@ const Dashboard = () => {
               </div>
             </div>
             <ResponsiveContainer width="100%" height={400}>
-              <ComposedChart data={trends.bench_trend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="month" stroke="#718096" />
-                <YAxis yAxisId="left" stroke="#718096" label={{ value: 'Bench Count', angle: -90, position: 'insideLeft' }} />
-                <YAxis yAxisId="right" orientation="right" stroke="#718096" label={{ value: 'Utilization %', angle: 90, position: 'insideRight' }} />
-                <Tooltip />
-                <Legend />
+              <ComposedChart data={trends.bench_trend} margin={{ top: 10, right: 20, bottom: 10, left: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" opacity={0.5} />
+                <XAxis 
+                  dataKey="month" 
+                  stroke="#6b7280" 
+                  tick={{ fill: '#6b7280', fontSize: 12 }}
+                  tickLine={{ stroke: '#6b7280' }}
+                />
+                <YAxis 
+                  yAxisId="left" 
+                  stroke="#6b7280" 
+                  label={{ value: 'Bench Count', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#6b7280' } }}
+                  tick={{ fill: '#6b7280', fontSize: 12 }}
+                  tickLine={{ stroke: '#6b7280' }}
+                />
+                <YAxis 
+                  yAxisId="right" 
+                  orientation="right" 
+                  stroke="#6b7280" 
+                  label={{ value: 'Utilization %', angle: 90, position: 'insideRight', style: { textAnchor: 'middle', fill: '#6b7280' } }}
+                  tick={{ fill: '#6b7280', fontSize: 12 }}
+                  tickLine={{ stroke: '#6b7280' }}
+                />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: 'white', 
+                    border: '1px solid #e5e7eb', 
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+                  }}
+                />
+                <Legend 
+                  wrapperStyle={{ paddingTop: '20px' }}
+                  iconType="line"
+                />
                 <Area
                   yAxisId="left"
                   type="monotone"
                   dataKey="bench_count"
                   fill={COLORS.red}
-                  fillOpacity={0.1}
+                  fillOpacity={0.15}
                   stroke={COLORS.red}
-                  strokeWidth={3}
+                  strokeWidth={2.5}
                   name="Bench Count"
+                  dot={{ fill: COLORS.red, r: 4 }}
+                  activeDot={{ r: 6 }}
                 />
                 <Line
                   yAxisId="right"
                   type="monotone"
                   dataKey="utilization"
                   stroke={COLORS.green}
-                  strokeWidth={3}
+                  strokeWidth={2.5}
                   name="Utilization %"
+                  dot={{ fill: COLORS.green, r: 4 }}
+                  activeDot={{ r: 6 }}
                 />
                 {trends.bench_trend.some(d => d.forecast) && (
                   <Line
@@ -370,30 +470,64 @@ const Dashboard = () => {
                     dataKey="bench_count"
                     stroke={COLORS.purple}
                     strokeWidth={2}
-                    strokeDasharray="5 5"
+                    strokeDasharray="8 4"
                     name="Forecast (90d)"
                     data={trends.bench_trend.filter(d => d.forecast)}
+                    dot={{ fill: COLORS.purple, r: 3 }}
+                    activeDot={{ r: 5 }}
                   />
                 )}
               </ComposedChart>
             </ResponsiveContainer>
           </div>
 
-          {/* Utilization by Role */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+          {/* Utilization by Role - Enhanced */}
+          <div className="lg:col-span-1 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
             <div className="mb-5 pb-4 border-b border-gray-200">
               <h3 className="text-lg font-bold text-gray-900">Utilization by Role Level</h3>
-              <p className="text-sm text-gray-500 mt-1">Current allocation status</p>
+              <p className="text-sm text-gray-500 mt-1">Current allocation status across role levels</p>
             </div>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={trends.utilization_by_role}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="role" stroke="#718096" />
-                <YAxis stroke="#718096" label={{ value: 'Percentage', angle: -90, position: 'insideLeft' }} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="allocated" stackId="a" fill={COLORS.green} radius={[4, 4, 0, 0]} name="Allocated" />
-                <Bar dataKey="bench" stackId="a" fill={COLORS.red} radius={[0, 0, 4, 4]} name="Bench" />
+            <ResponsiveContainer width="100%" height={400}>
+              <BarChart data={trends.utilization_by_role} margin={{ top: 10, right: 20, bottom: 10, left: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" opacity={0.5} />
+                <XAxis 
+                  dataKey="role" 
+                  stroke="#6b7280" 
+                  tick={{ fill: '#6b7280', fontSize: 12 }}
+                  tickLine={{ stroke: '#6b7280' }}
+                />
+                <YAxis 
+                  stroke="#6b7280" 
+                  label={{ value: 'Percentage (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#6b7280' } }}
+                  tick={{ fill: '#6b7280', fontSize: 12 }}
+                  tickLine={{ stroke: '#6b7280' }}
+                  domain={[0, 100]}
+                />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: 'white', 
+                    border: '1px solid #e5e7eb', 
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+                  }}
+                />
+                <Legend 
+                  wrapperStyle={{ paddingTop: '20px' }}
+                />
+                <Bar 
+                  dataKey="allocated" 
+                  stackId="a" 
+                  fill={COLORS.green} 
+                  radius={[6, 6, 0, 0]} 
+                  name="Allocated"
+                />
+                <Bar 
+                  dataKey="bench" 
+                  stackId="a" 
+                  fill={COLORS.red} 
+                  radius={[0, 0, 6, 6]} 
+                  name="Bench"
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>

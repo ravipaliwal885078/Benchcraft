@@ -3,19 +3,33 @@ Training and Skill Gap Analysis Route
 Upskilling recommendations over hiring
 """
 from flask import Blueprint, request, jsonify
-from agents.training_recommendation_agent import TrainingRecommendationAgent
+import traceback
 
 bp = Blueprint('training', __name__)
 
-# Initialize agent (singleton pattern)
+# Initialize agent (singleton pattern) - lazy loading to avoid startup errors
 _training_agent = None
 
 def get_training_agent():
-    """Get or create training recommendation agent"""
+    """Get or create training recommendation agent with error handling"""
     global _training_agent
     if _training_agent is None:
-        _training_agent = TrainingRecommendationAgent()
+        try:
+            from agents.training_recommendation_agent import TrainingRecommendationAgent
+            _training_agent = TrainingRecommendationAgent()
+        except Exception as e:
+            print(f"Warning: Failed to initialize TrainingRecommendationAgent: {e}")
+            traceback.print_exc()
+            raise
     return _training_agent
+
+@bp.route('/test', methods=['GET'])
+def test_training_route():
+    """Test endpoint to verify training routes are working"""
+    return jsonify({
+        'message': 'Training routes are working',
+        'route': '/api/v1/training/test'
+    })
 
 @bp.route('/recommendations', methods=['GET'])
 def get_training_recommendations():
@@ -24,12 +38,36 @@ def get_training_recommendations():
     Analyzes skill gaps and recommends upskilling over hiring
     """
     try:
-        agent = get_training_agent()
-        result = agent.analyze_skill_gaps_and_recommend_training()
-        return jsonify(result)
+        # Initialize agent with error handling
+        try:
+            agent = get_training_agent()
+        except Exception as agent_error:
+            error_traceback = traceback.format_exc()
+            print(f"Error initializing TrainingRecommendationAgent: {error_traceback}")
+            return jsonify({
+                'error': f'Failed to initialize AI agent: {str(agent_error)}',
+                'traceback': error_traceback,
+                'message': 'Please check backend logs for details'
+            }), 500
+        
+        # Call agent method
+        try:
+            result = agent.analyze_skill_gaps_and_recommend_training()
+            return jsonify(result)
+        except Exception as analysis_error:
+            error_traceback = traceback.format_exc()
+            print(f"Error analyzing skill gaps: {error_traceback}")
+            return jsonify({
+                'error': str(analysis_error),
+                'traceback': error_traceback,
+                'message': 'Failed to generate training recommendations'
+            }), 500
     except Exception as e:
+        error_traceback = traceback.format_exc()
+        print(f"Unexpected error in get_training_recommendations: {error_traceback}")
         return jsonify({
             'error': str(e),
+            'traceback': error_traceback,
             'message': 'Failed to generate training recommendations'
         }), 500
 

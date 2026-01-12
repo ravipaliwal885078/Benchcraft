@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { GraduationCap, TrendingUp, BookOpen, DollarSign, Clock, Target, Users, Lightbulb } from 'lucide-react'
-import SkillGapAnalysis from '../components/SkillGapAnalysis'
+import { GraduationCap, TrendingUp, DollarSign, Clock, Target, Users, Lightbulb } from 'lucide-react'
 import { getTrainingRecommendations } from '../services/api'
+import PageHeader from '../components/PageHeader'
 
 const TalentLab = () => {
   const [recommendations, setRecommendations] = useState([])
@@ -47,10 +47,11 @@ const TalentLab = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Talent Lab</h1>
-        <p className="text-gray-600 mt-2">AI-Powered Training Recommendations - Upskilling over Hiring</p>
-      </div>
+      <PageHeader
+        title="Talent Lab"
+        subtitle="AI-Powered Training Recommendations - Upskilling over Hiring"
+        variant="simple"
+      />
 
       {/* Summary Cards */}
       {summary && (
@@ -278,24 +279,6 @@ const TalentLab = () => {
         </div>
       )}
 
-      {/* Skills Matrix Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
-            <BookOpen className="w-6 h-6 mr-2 text-indigo-600" />
-            Skills Matrix
-          </h2>
-          <div className="space-y-4">
-            <div className="text-sm text-gray-600">
-              Select an employee to view their skill profile and training recommendations.
-            </div>
-            {/* In production, this would be a searchable list of employees */}
-          </div>
-        </div>
-
-        {/* Skill Gap Analysis Component */}
-        <SkillGapAnalysis />
-      </div>
     </div>
   )
 }
