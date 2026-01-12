@@ -137,9 +137,9 @@ def allocate_resource():
         )
         session.add(allocation)
         
-        # Update employee status
-        from models import EmployeeStatus
-        employee.status = EmployeeStatus.ALLOCATED
+        # Sync employee status based on actual allocations
+        from utils.employee_status import sync_employee_status
+        sync_employee_status(employee, session)
         
         session.commit()
         session.refresh(allocation)

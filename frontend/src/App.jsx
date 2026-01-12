@@ -10,6 +10,7 @@ import Employees from './pages/Employees'
 import Projects from './pages/Projects'
 import Risk from './pages/Risk'
 import AllocationReport from './pages/AllocationReport'
+import Reports from './pages/Reports'
 
 function Navigation() {
   const location = useLocation()
@@ -49,12 +50,6 @@ function Navigation() {
                 Dashboard
               </Link>
               <Link
-                to="/market"
-                className={getLinkClassName('/market')}
-              >
-                Talent Search
-              </Link>
-              <Link
                 to="/talent-lab"
                 className={getLinkClassName('/talent-lab')}
               >
@@ -83,6 +78,12 @@ function Navigation() {
                 className={getLinkClassName('/allocation-report')}
               >
                 Allocation Report
+              </Link>
+              <Link
+                to="/reports"
+                className={getLinkClassName('/reports')}
+              >
+                Reports
               </Link>
             </div>
           </div>
@@ -113,6 +114,8 @@ function App() {
             <Route path="/projects" element={<Projects />} />
             <Route path="/risk" element={<Risk />} />
             <Route path="/allocation-report" element={<AllocationReport />} />
+            <Route path="/allocation-report/project/:projectId" element={<AllocationReport />} />
+            <Route path="/reports" element={<Reports />} />
           </Routes>
         </main>
       </div>

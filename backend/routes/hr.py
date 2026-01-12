@@ -9,6 +9,7 @@ from models import (
 )
 from datetime import date, datetime, timedelta
 from sqlalchemy import and_, or_, func, text, inspect
+from utils.employee_status import get_derived_employee_status
 
 bp = Blueprint('hr', __name__)
 db_tool = SQLDatabaseTool()
@@ -64,16 +65,22 @@ def init_database():
 def get_pending_profiles():
     session = db_tool.Session()
     try:
-        employees = session.query(Employee).filter(Employee.status == EmployeeStatus.BENCH).all()
+        today = date.today()
+        # Get all employees and filter by derived status (not stored status)
+        all_employees = session.query(Employee).all()
+        bench_employees = [
+            emp for emp in all_employees
+            if get_derived_employee_status(emp, session, today) == EmployeeStatus.BENCH
+        ]
         result = [
             {
                 'id': emp.id,
                 'first_name': emp.first_name,
                 'last_name': emp.last_name,
                 'email': emp.email,
-                'status': emp.status.value if emp.status and hasattr(emp.status, 'value') else str(emp.status) if emp.status else None
+                'status': get_derived_employee_status(emp, session, today).value
             }
-            for emp in employees
+            for emp in bench_employees
         ]
         return jsonify(result)
     finally:
@@ -86,7 +93,9 @@ def verify_profile(emp_id):
         emp = session.query(Employee).get(emp_id)
         if not emp:
             return jsonify({'error': 'Employee not found'}), 404
-        emp.status = EmployeeStatus.ALLOCATED
+        # Sync status based on actual allocations (don't force to ALLOCATED)
+        from utils.employee_status import sync_employee_status
+        sync_employee_status(emp, session)
         session.commit()
         return jsonify({'message': 'Profile verified and activated', 'id': emp.id})
     finally:
@@ -425,11 +434,9 @@ def get_allocation_report():
                 try:
                     employee_name = f"{employee.first_name or ''} {employee.last_name or ''}".strip()
                     employee_email = employee.email or 'N/A'
-                    # Handle status - could be enum or string
-                    if hasattr(employee.status, 'value'):
-                        employee_status = employee.status.value
-                    else:
-                        employee_status = str(employee.status) if employee.status else None
+                    # Derive status from actual allocations (not stored status)
+                    derived_status = get_derived_employee_status(employee, session, today)
+                    employee_status = derived_status.value
                     # Handle role_level - now stored as string
                     employee_role = str(employee.role_level) if employee.role_level else None
                     employee_ctc = employee.ctc_monthly or 0.0

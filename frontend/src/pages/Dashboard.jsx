@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getComprehensiveDashboard, getProjects } from '../services/api'
 import ChatAgent from '../components/ChatAgent'
 import { Link } from 'react-router-dom'
+import PageHeader from '../components/PageHeader'
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ComposedChart, Area
@@ -168,23 +169,24 @@ const Dashboard = () => {
     <div className="min-h-screen bg-gray-50 p-5">
       <div className="max-w-[1800px] mx-auto space-y-6">
         {/* Header */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-1">🎯 Resource Management Dashboard</h1>
-            <p className="text-gray-600 text-sm">Real-time insights powered by AI • Last updated: {new Date(dashboardData.last_updated).toLocaleTimeString()}</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="bg-gray-50 px-5 py-2 rounded-lg text-gray-700 text-sm font-medium border border-gray-200">
-              📅 {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-            </div>
-            <button
-              onClick={loadDashboardData}
-              className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold text-sm hover:bg-blue-700 transition shadow-md hover:shadow-lg"
-            >
-              ↻ Refresh Data
-            </button>
-          </div>
-        </div>
+        <PageHeader
+          title="🎯 Resource Management Dashboard"
+          subtitle={`Real-time insights powered by AI • Last updated: ${new Date(dashboardData.last_updated).toLocaleTimeString()}`}
+          variant="card"
+          actions={
+            <>
+              <div className="bg-gray-50 px-5 py-2 rounded-lg text-gray-700 text-sm font-medium border border-gray-200">
+                📅 {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+              </div>
+              <button
+                onClick={loadDashboardData}
+                className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold text-sm hover:bg-blue-700 transition shadow-md hover:shadow-lg"
+              >
+                ↻ Refresh Data
+              </button>
+            </>
+          }
+        />
 
         {/* KPI Cards - Updated styling like AllocationReport */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">

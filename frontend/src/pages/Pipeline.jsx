@@ -4,6 +4,7 @@ import { Plus, FileText, DollarSign, Calendar, Edit, Users, X } from 'lucide-rea
 import { getProjects, createProject, updateProject } from '../services/api'
 import ProjectWizard from '../components/ProjectWizard'
 import ManageTeamModal from '../components/ManageTeamModal'
+import PageHeader from '../components/PageHeader'
 
 const Pipeline = () => {
   const navigate = useNavigate()
@@ -107,19 +108,19 @@ const Pipeline = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-primary">Projects</h1>
-          <p className="text-muted-foreground mt-2">Manage active projects and pipeline</p>
-        </div>
-        <button
-          onClick={() => setShowWizard(true)}
-          className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-dark flex items-center space-x-2"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Create Project</span>
-        </button>
-      </div>
+      <PageHeader
+        title="Projects"
+        subtitle="Manage active projects and pipeline"
+        actions={
+          <button
+            onClick={() => setShowWizard(true)}
+            className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-dark flex items-center space-x-2"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Create Project</span>
+          </button>
+        }
+      />
 
       {/* Project Wizard Modal */}
       <ProjectWizard

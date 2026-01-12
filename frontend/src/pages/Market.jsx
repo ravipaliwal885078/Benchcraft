@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import PageHeader from '../components/PageHeader'
 import AnonymizedCard from '../components/AnonymizedCard'
 import { searchTalent, allocateResource, getProjects } from '../services/api'
 import { Search, Filter, X } from 'lucide-react'
@@ -94,10 +95,11 @@ const Market = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Marketplace</h1>
-        <p className="text-gray-600 mt-2">Blind Match Interface - Search for talent using natural language</p>
-      </div>
+      <PageHeader
+        title="Marketplace"
+        subtitle="Blind Match Interface - Search for talent using natural language"
+        variant="simple"
+      />
 
       {/* Search Form */}
       <div className="bg-white rounded-lg shadow-md p-6">

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { GraduationCap, TrendingUp, BookOpen, DollarSign, Clock, Target, Users, Lightbulb } from 'lucide-react'
 import SkillGapAnalysis from '../components/SkillGapAnalysis'
 import { getTrainingRecommendations } from '../services/api'
+import PageHeader from '../components/PageHeader'
 
 const TalentLab = () => {
   const [recommendations, setRecommendations] = useState([])
@@ -47,10 +48,11 @@ const TalentLab = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Talent Lab</h1>
-        <p className="text-gray-600 mt-2">AI-Powered Training Recommendations - Upskilling over Hiring</p>
-      </div>
+      <PageHeader
+        title="Talent Lab"
+        subtitle="AI-Powered Training Recommendations - Upskilling over Hiring"
+        variant="simple"
+      />
 
       {/* Summary Cards */}
       {summary && (

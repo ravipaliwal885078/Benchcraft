@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getProject, createProjectFeedback, getEmployees, updateProjectTeam, checkEmployeeAllocation, removeTeamMember } from '../services/api'
+import { getProject, createProjectFeedback, getEmployees, updateProjectTeam, checkEmployeeAllocation, removeTeamMember, exportAllocationReportExcel } from '../services/api'
 import {
   Building, Calendar, DollarSign, Users, TrendingUp,
-  Star, MessageSquare, Target, Clock, Briefcase, X, Plus, Edit
+  Star, MessageSquare, Target, Clock, Briefcase, X, Plus, Edit, FileSpreadsheet, Download
 } from 'lucide-react'
 import ManageTeamModal from '../components/ManageTeamModal'
 
@@ -687,6 +687,57 @@ const ProjectView = () => {
               <p className="text-2xl font-bold text-gray-900">{formatCurrency(metrics.budget_remaining)}</p>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Allocation Report Actions */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Allocation Reports</h3>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={async () => {
+              try {
+                const today = new Date()
+                const endDate = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
+                await exportAllocationReportExcel(
+                  'internal',
+                  'project',
+                  parseInt(id),
+                  today.toISOString().split('T')[0],
+                  endDate.toISOString().split('T')[0]
+                )
+              } catch (error) {
+                console.error('Failed to export internal report:', error)
+                alert('Failed to export internal report: ' + (error.response?.data?.error || error.message))
+              }
+            }}
+            className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 flex items-center gap-2"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            Export Internal Report
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                const today = new Date()
+                const endDate = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
+                await exportAllocationReportExcel(
+                  'requisition',
+                  'project',
+                  parseInt(id),
+                  today.toISOString().split('T')[0],
+                  endDate.toISOString().split('T')[0]
+                )
+              } catch (error) {
+                console.error('Failed to export requisition report:', error)
+                alert('Failed to export requisition report: ' + (error.response?.data?.error || error.message))
+              }
+            }}
+            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            Export Requisition Report
+          </button>
         </div>
       </div>
 

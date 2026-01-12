@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
-import { getAllocationReport } from '../services/api'
+import { Link, useParams } from 'react-router-dom'
+import { getAllocationReport, generateAllocationReport, exportAllocationReportExcel } from '../services/api'
+import PageHeader from '../components/PageHeader'
+import { Download, FileSpreadsheet } from 'lucide-react'
 
 const AllocationReport = () => {
+  const { projectId } = useParams()
   const [reportData, setReportData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -9,17 +13,40 @@ const AllocationReport = () => {
   const [includeBench, setIncludeBench] = useState(true)
   const [filterStatus, setFilterStatus] = useState('all')
   const [sortBy, setSortBy] = useState('priority')
+  
+  // New report type and level state
+  // On Allocation Report tab (global): default to 'internal' only
+  // On project summary: both 'internal' and 'requisition' available
+  const isProjectLevel = !!projectId
+  const [reportType, setReportType] = useState('internal') // 'internal' or 'requisition'
+  const [level, setLevel] = useState(isProjectLevel ? 'project' : 'overall') // 'project' or 'overall'
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0])
+  const [endDate, setEndDate] = useState(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     loadReport()
-  }, [forecastDays, includeBench])
+  }, [forecastDays, includeBench, reportType, level, projectId, startDate, endDate])
 
   const loadReport = async () => {
     setLoading(true)
     setError(null)
     try {
-      const data = await getAllocationReport(forecastDays, includeBench)
-      setReportData(data)
+      // Use new allocation report API if reportType is set
+      if (reportType === 'internal' || reportType === 'requisition') {
+        const data = await generateAllocationReport(
+          reportType,
+          level,
+          projectId ? parseInt(projectId) : null,
+          startDate,
+          endDate
+        )
+        setReportData(data)
+      } else {
+        // Fallback to old API for backward compatibility
+        const data = await getAllocationReport(forecastDays, includeBench)
+        setReportData(data)
+      }
     } catch (error) {
       console.error('Failed to load allocation report:', error)
       console.error('Error response:', error.response?.data)
@@ -31,6 +58,24 @@ const AllocationReport = () => {
       setError(`${errorMessage}${errorType ? ` (${errorType})` : ''}`)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleExportExcel = async () => {
+    setExporting(true)
+    try {
+      await exportAllocationReportExcel(
+        reportType,
+        level,
+        projectId ? parseInt(projectId) : null,
+        startDate,
+        endDate
+      )
+    } catch (error) {
+      console.error('Failed to export Excel:', error)
+      alert('Failed to export Excel report: ' + (error.response?.data?.error || error.message))
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -77,33 +122,36 @@ const AllocationReport = () => {
     return 'text-red-600'
   }
 
-  const filteredEmployees = reportData?.employees?.filter(emp => {
+  // Handle both old format (employees) and new format (resources)
+  const employees = reportData?.employees || reportData?.resources || []
+  
+  const filteredEmployees = employees.filter(emp => {
     if (filterStatus === 'all') return true
-    if (filterStatus === 'available') return emp.availability.will_be_available_in_forecast
-    if (filterStatus === 'allocated') return emp.current_project.project_name
+    if (filterStatus === 'available') return emp.availability?.will_be_available_in_forecast || false
+    if (filterStatus === 'allocated') return emp.current_project?.project_name || emp.project_name
     if (filterStatus === 'bench') return emp.status === 'BENCH'
     return true
-  }) || []
+  })
 
   const sortedEmployees = [...filteredEmployees].sort((a, b) => {
     if (sortBy === 'priority') {
-      const scoreA = a.priority.priority_score || 0
-      const scoreB = b.priority.priority_score || 0
+      const scoreA = a.priority?.priority_score || 0
+      const scoreB = b.priority?.priority_score || 0
       return scoreB - scoreA
     }
     if (sortBy === 'margin') {
-      const marginA = a.financials.gross_margin_percentage || 0
-      const marginB = b.financials.gross_margin_percentage || 0
+      const marginA = a.financials?.gross_margin_percentage || 0
+      const marginB = b.financials?.gross_margin_percentage || 0
       return marginB - marginA
     }
     if (sortBy === 'profit') {
-      const profitA = a.financials.gross_profit_per_hour || 0
-      const profitB = b.financials.gross_profit_per_hour || 0
+      const profitA = a.financials?.gross_profit_per_hour || 0
+      const profitB = b.financials?.gross_profit_per_hour || 0
       return profitB - profitA
     }
     if (sortBy === 'rate') {
-      const rateA = a.financials.current_hourly_rate || 0
-      const rateB = b.financials.current_hourly_rate || 0
+      const rateA = a.financials?.current_hourly_rate || a.hourly_rate || 0
+      const rateB = b.financials?.current_hourly_rate || b.hourly_rate || 0
       return rateB - rateA
     }
     return 0
@@ -172,49 +220,176 @@ const AllocationReport = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Project Allocation Manager Report</h1>
-          <p className="text-gray-600 mt-2">
-            Employee profitability and availability insights for proactive planning
-          </p>
-        </div>
-        <div className="text-right">
-          <p className="text-sm text-gray-500">Report Date: {new Date(reportData.report_date).toLocaleDateString()}</p>
-          <p className="text-sm text-gray-500">Forecast Period: {reportData.forecast_days} days</p>
-          <button
-            onClick={loadReport}
-            className="mt-2 px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm"
-          >
-            Refresh Report
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title={`${reportType === 'internal' ? 'Internal' : 'Requisition'} Allocation Report${level === 'project' && reportData.project ? ` - ${reportData.project.name}` : ''}`}
+        subtitle={reportType === 'internal' 
+          ? 'Internal allocation report with detailed financial metrics' 
+          : 'Client-facing requisition report (trainees excluded)'}
+        actions={
+          <>
+            <div className="text-right">
+              <p className="text-sm text-gray-500">Report Date: {new Date(reportData.report_date || reportData.reporting_period?.start_date || new Date()).toLocaleDateString()}</p>
+              {reportData.reporting_period && (
+                <p className="text-sm text-gray-500">
+                  Period: {new Date(reportData.reporting_period.start_date).toLocaleDateString()} - {new Date(reportData.reporting_period.end_date).toLocaleDateString()}
+                </p>
+              )}
+              {reportData.forecast_days && (
+                <p className="text-sm text-gray-500">Forecast Period: {reportData.forecast_days} days</p>
+              )}
+            </div>
+            <button
+              onClick={loadReport}
+              className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm"
+            >
+              Refresh Report
+            </button>
+          </>
+        }
+      />
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg shadow p-4">
-          <p className="text-sm text-gray-600">Total Employees</p>
-          <p className="text-2xl font-bold text-gray-900">{reportData.total_employees}</p>
+          <p className="text-sm text-gray-600">Total Resources</p>
+          <p className="text-2xl font-bold text-gray-900">
+            {reportData.summary?.total_resources || reportData.total_employees || 0}
+          </p>
         </div>
         <div className="bg-white rounded-lg shadow p-4">
-          <p className="text-sm text-gray-600">Currently Allocated</p>
-          <p className="text-2xl font-bold text-green-600">{reportData.summary.total_allocated}</p>
+          <p className="text-sm text-gray-600">Total Monthly Hours</p>
+          <p className="text-2xl font-bold text-green-600">
+            {reportData.summary?.total_monthly_hours?.toFixed(0) || reportData.summary?.total_allocated || 0}
+          </p>
         </div>
         <div className="bg-white rounded-lg shadow p-4">
-          <p className="text-sm text-gray-600">Available in Forecast</p>
-          <p className="text-2xl font-bold text-blue-600">{reportData.summary.total_available_in_forecast}</p>
+          <p className="text-sm text-gray-600">Total Billable Hours</p>
+          <p className="text-2xl font-bold text-blue-600">
+            {reportData.summary?.total_billable_hours?.toFixed(0) || reportData.summary?.total_available_in_forecast || 0}
+          </p>
         </div>
         <div className="bg-white rounded-lg shadow p-4">
-          <p className="text-sm text-gray-600">Avg Gross Margin</p>
-          <p className="text-2xl font-bold text-indigo-600">{reportData.summary.avg_gross_margin}%</p>
+          <p className="text-sm text-gray-600">Total Monthly Amount</p>
+          <p className="text-2xl font-bold text-indigo-600">
+            {formatCurrency(reportData.summary?.total_monthly_amount || 0, reportData.project?.billing_currency || 'USD')}
+          </p>
+        </div>
+      </div>
+      
+      {/* Project Info (if project-level report) */}
+      {reportData.project && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div>
+              <span className="text-gray-600">Client:</span>
+              <span className="font-medium ml-2">{reportData.project.client_name}</span>
+            </div>
+            <div>
+              <span className="text-gray-600">Project:</span>
+              <span className="font-medium ml-2">{reportData.project.name}</span>
+            </div>
+            {reportData.project.code && (
+              <div>
+                <span className="text-gray-600">Code:</span>
+                <span className="font-medium ml-2">{reportData.project.code}</span>
+              </div>
+            )}
+            <div>
+              <span className="text-gray-600">Currency:</span>
+              <span className="font-medium ml-2">{reportData.project.billing_currency || 'USD'}</span>
+            </div>
+          </div>
+          {reportData.reporting_period && (
+            <div className="mt-2 text-sm text-gray-600">
+              Reporting Period: {new Date(reportData.reporting_period.start_date).toLocaleDateString()} - {new Date(reportData.reporting_period.end_date).toLocaleDateString()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Report Type and Level Selection */}
+      <div className="bg-white rounded-lg shadow p-4">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+          <div className="flex flex-col">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Report Type</label>
+            <select
+              value={reportType}
+              onChange={(e) => setReportType(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="internal">Internal Allocation Report</option>
+              {isProjectLevel && (
+                <option value="requisition">Requisition Report</option>
+              )}
+            </select>
+            {!isProjectLevel && (
+              <p className="text-xs text-gray-500 mt-1 h-4">Internal only on global report</p>
+            )}
+            {isProjectLevel && <div className="h-4"></div>}
+          </div>
+          <div className="flex flex-col">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Level</label>
+            <select
+              value={level}
+              onChange={(e) => setLevel(e.target.value)}
+              disabled={!!projectId}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100"
+            >
+              <option value="overall">Overall</option>
+              <option value="project">Project Level</option>
+            </select>
+            <div className="h-4"></div>
+          </div>
+          <div className="flex flex-col">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <div className="h-4"></div>
+          </div>
+          <div className="flex flex-col">
+            <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <div className="h-4"></div>
+          </div>
+          <div className="flex flex-col">
+            <label className="block text-sm font-medium text-gray-700 mb-1 invisible">Actions</label>
+            <button
+              onClick={handleExportExcel}
+              disabled={exporting || !reportData}
+              className="w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-400 flex items-center justify-center gap-2"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              {exporting ? 'Exporting...' : 'Export Excel'}
+            </button>
+            <div className="h-4"></div>
+          </div>
+          <div className="flex flex-col">
+            <label className="block text-sm font-medium text-gray-700 mb-1 invisible">Actions</label>
+            <button
+              onClick={loadReport}
+              className="w-full px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 flex items-center justify-center gap-2"
+            >
+              <Download className="w-4 h-4" />
+              Refresh
+            </button>
+            <div className="h-4"></div>
+          </div>
         </div>
       </div>
 
       {/* Filters and Controls */}
       <div className="bg-white rounded-lg shadow p-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
+          <div className="flex flex-col">
             <label className="block text-sm font-medium text-gray-700 mb-1">Forecast Days</label>
             <input
               type="number"
@@ -225,7 +400,7 @@ const AllocationReport = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
-          <div>
+          <div className="flex flex-col">
             <label className="block text-sm font-medium text-gray-700 mb-1">Filter Status</label>
             <select
               value={filterStatus}
@@ -238,7 +413,7 @@ const AllocationReport = () => {
               <option value="available">Available in Forecast</option>
             </select>
           </div>
-          <div>
+          <div className="flex flex-col">
             <label className="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
             <select
               value={sortBy}
@@ -251,16 +426,19 @@ const AllocationReport = () => {
               <option value="rate">Hourly Rate</option>
             </select>
           </div>
-          <div className="flex items-end">
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={includeBench}
-                onChange={(e) => setIncludeBench(e.target.checked)}
-                className="mr-2"
-              />
-              <span className="text-sm text-gray-700">Include Bench Employees</span>
-            </label>
+          <div className="flex flex-col">
+            <label className="block text-sm font-medium text-gray-700 mb-1 invisible">Include Bench</label>
+            <div className="flex items-center h-[42px]">
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeBench}
+                  onChange={(e) => setIncludeBench(e.target.checked)}
+                  className="mr-2 w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                />
+                <span className="text-sm text-gray-700">Include Bench Employees</span>
+              </label>
+            </div>
           </div>
         </div>
       </div>
@@ -281,32 +459,39 @@ const AllocationReport = () => {
                   Allocation %
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Alignment Period
+                  Period
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Hourly Rate
                 </th>
+                {reportType === 'internal' && (
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Gross Margin
+                  </th>
+                )}
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Gross Margin
+                  Monthly Amount
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Monthly Profit
+                  {reportData.resources ? 'Utilization' : 'Priority'}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Priority
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Availability
+                  {reportData.resources ? 'Status' : 'Availability'}
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {sortedEmployees.map((employee) => (
-                <tr key={employee.employee_id} className="hover:bg-gray-50">
+              {sortedEmployees.map((employee, index) => (
+                <tr key={employee.employee_id || employee.id || index} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
                       <div className="text-sm font-medium text-gray-900">
-                        {employee.employee_name || 'N/A'}
+                        <Link 
+                          to={`/employees/${employee.employee_id || employee.id}`}
+                          className="text-indigo-600 hover:text-indigo-800 hover:underline"
+                        >
+                          {employee.employee_name || `${employee.first_name || ''} ${employee.last_name || ''}`.trim() || 'N/A'}
+                        </Link>
                       </div>
                       <div className="text-sm text-gray-500">{employee.email || 'N/A'}</div>
                       <div className="flex items-center gap-2 mt-1">
@@ -324,14 +509,23 @@ const AllocationReport = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    {employee.current_project?.project_name ? (
+                    {(employee.current_project?.project_name || employee.project_name) ? (
                       <div>
                         <div className="text-sm font-medium text-gray-900">
-                          {employee.current_project.project_name}
+                          {(employee.current_project?.project_id || employee.project_id) ? (
+                            <Link 
+                              to={`/projects/${employee.current_project?.project_id || employee.project_id}`}
+                              className="text-indigo-600 hover:text-indigo-800 hover:underline"
+                            >
+                              {employee.current_project?.project_name || employee.project_name}
+                            </Link>
+                          ) : (
+                            employee.current_project?.project_name || employee.project_name
+                          )}
                         </div>
-                        {employee.current_project.client_name && (
+                        {(employee.current_project?.client_name || employee.client_name) && (
                           <div className="text-sm text-gray-500">
-                            {employee.current_project.client_name}
+                            {employee.current_project?.client_name || employee.client_name}
                           </div>
                         )}
                       </div>
@@ -340,17 +534,22 @@ const AllocationReport = () => {
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {employee.current_project?.allocation_percentage || employee.current_project?.utilization_percentage ? (
+                    {(employee.current_project?.allocation_percentage || employee.allocation_percentage || employee.current_project?.utilization_percentage) ? (
                       <div>
                         <div className="text-sm font-medium text-gray-900">
-                          {employee.current_project.allocation_percentage || employee.current_project.utilization_percentage || 100}%
+                          {employee.allocation_percentage || employee.current_project?.allocation_percentage || employee.current_project?.utilization_percentage || 100}%
                         </div>
-                        {employee.current_project.billable_percentage && (
+                        {(employee.billable_percentage || employee.current_project?.billable_percentage) && (
                           <div className="text-xs text-gray-500">
-                            Billable: {employee.current_project.billable_percentage}%
+                            Billable: {employee.billable_percentage || employee.current_project?.billable_percentage}%
                           </div>
                         )}
-                        {(employee.current_project.allocation_percentage || employee.current_project.utilization_percentage || 100) !== (employee.current_project.billable_percentage || 100) && (
+                        {reportType === 'internal' && employee.internal_allocation_percentage && (
+                          <div className="text-xs text-blue-600">
+                            Internal: {employee.internal_allocation_percentage}%
+                          </div>
+                        )}
+                        {((employee.allocation_percentage || employee.current_project?.allocation_percentage || 100) !== (employee.billable_percentage || employee.current_project?.billable_percentage || 100)) && (
                           <div className="text-xs text-orange-600 mt-1">⚠️ Partial</div>
                         )}
                       </div>
@@ -359,36 +558,17 @@ const AllocationReport = () => {
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {employee.current_project?.allocation_percentage || employee.current_project?.utilization_percentage ? (
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">
-                          {employee.current_project.allocation_percentage || employee.current_project.utilization_percentage || 100}%
-                        </div>
-                        {employee.current_project.billable_percentage && (
-                          <div className="text-xs text-gray-500">
-                            Billable: {employee.current_project.billable_percentage}%
-                          </div>
-                        )}
-                        {(employee.current_project.allocation_percentage || employee.current_project.utilization_percentage || 100) !== (employee.current_project.billable_percentage || 100) && (
-                          <div className="text-xs text-orange-600 mt-1">⚠️ Partial</div>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-sm text-gray-400">N/A</span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {employee.current_project?.start_date ? (
+                    {(employee.start_date || employee.current_project?.start_date) ? (
                       <div>
                         <div className="text-sm text-gray-900">
-                          {new Date(employee.current_project.start_date).toLocaleDateString()}
+                          {new Date(employee.start_date || employee.current_project?.start_date).toLocaleDateString()}
                         </div>
-                        {employee.current_project.end_date ? (
+                        {(employee.end_date || employee.current_project?.end_date) ? (
                           <>
                             <div className="text-sm text-gray-500">
-                              to {new Date(employee.current_project.end_date).toLocaleDateString()}
+                              to {new Date(employee.end_date || employee.current_project?.end_date).toLocaleDateString()}
                             </div>
-                            {employee.current_project.alignment_period_days && (
+                            {employee.current_project?.alignment_period_days && (
                               <div className="text-xs text-gray-400">
                                 {employee.current_project.alignment_period_days} days
                               </div>
@@ -403,28 +583,28 @@ const AllocationReport = () => {
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {employee.financials?.current_hourly_rate ? (
+                    {(employee.hourly_rate || employee.financials?.current_hourly_rate) ? (
                       <div>
                         <div className="text-sm font-medium text-gray-900">
-                          {formatCurrency(employee.financials.current_hourly_rate, employee.currency || 'USD')}
+                          {formatCurrency(employee.hourly_rate || employee.financials?.current_hourly_rate, reportData.project?.billing_currency || employee.currency || 'USD')}
                         </div>
-                        {employee.financials.hourly_cost && (
+                        {employee.financials?.hourly_cost && reportType === 'internal' && (
                           <div className="text-xs text-gray-500">
                             Cost: {formatCurrency(employee.financials.hourly_cost, employee.currency || 'USD')}
                           </div>
                         )}
-                        {employee.financials.rate_card_type && (
+                        {employee.financials?.rate_card_type && reportType === 'internal' && (
                           <div className="text-xs text-gray-400">
                             {employee.financials.rate_card_type}
                           </div>
                         )}
                       </div>
                     ) : (
-                      <span className="text-sm text-gray-400">No rate card</span>
+                      <span className="text-sm text-gray-400">No rate</span>
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {employee.financials?.gross_margin_percentage !== null && employee.financials?.gross_margin_percentage !== undefined ? (
+                    {employee.financials?.gross_margin_percentage !== null && employee.financials?.gross_margin_percentage !== undefined && reportType === 'internal' ? (
                       <div>
                         <div className={`text-sm font-medium ${getMarginColor(employee.financials.gross_margin_percentage)}`}>
                           {employee.financials.gross_margin_percentage.toFixed(1)}%
@@ -440,14 +620,14 @@ const AllocationReport = () => {
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {employee.financials?.estimated_monthly_profit ? (
+                    {(employee.monthly_amount || employee.financials?.estimated_monthly_profit) ? (
                       <div>
                         <div className="text-sm font-medium text-gray-900">
-                          {formatCurrency(employee.financials.estimated_monthly_profit, employee.currency || 'USD')}
+                          {formatCurrency(employee.monthly_amount || employee.financials?.estimated_monthly_profit, reportData.project?.billing_currency || employee.currency || 'USD')}
                         </div>
-                        {employee.financials.estimated_monthly_revenue && (
+                        {(employee.period_revenue || employee.financials?.estimated_monthly_revenue) && reportType === 'internal' && (
                           <div className="text-xs text-gray-500">
-                            Rev: {formatCurrency(employee.financials.estimated_monthly_revenue, employee.currency || 'USD')}
+                            Rev: {formatCurrency(employee.period_revenue || employee.financials?.estimated_monthly_revenue, reportData.project?.billing_currency || employee.currency || 'USD')}
                           </div>
                         )}
                       </div>
@@ -456,7 +636,17 @@ const AllocationReport = () => {
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {employee.priority?.priority_score !== null && employee.priority?.priority_score !== undefined ? (
+                    {employee.utilization ? (
+                      <div>
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          employee.utilization === 'Optimal' ? 'bg-green-100 text-green-800' :
+                          employee.utilization === 'Under-utilized' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {employee.utilization}
+                        </span>
+                      </div>
+                    ) : employee.priority?.priority_score !== null && employee.priority?.priority_score !== undefined ? (
                       <div>
                         {employee.priority.priority_tier && (
                           <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPriorityBadgeColor(employee.priority.priority_tier)}`}>
@@ -466,19 +656,24 @@ const AllocationReport = () => {
                         <div className="text-xs text-gray-500 mt-1">
                           Score: {employee.priority.priority_score?.toFixed(1) || 'N/A'}
                         </div>
-                        {employee.priority.max_domain_rate_value && (
-                          <div className="text-xs text-gray-400">
-                            Max: {formatCurrency(employee.priority.max_domain_rate_value, employee.currency || 'USD')}
-                          </div>
-                        )}
                       </div>
                     ) : (
-                      <span className="text-sm text-gray-400">Not calculated</span>
+                      <span className="text-sm text-gray-400">N/A</span>
                     )}
                   </td>
                   <td className="px-6 py-4">
                     <div>
-                      {employee.availability?.next_available_date ? (
+                      {employee.status ? (
+                        <div>
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                            employee.status === 'On-Track' ? 'bg-green-100 text-green-800' :
+                            employee.status === 'Delayed' ? 'bg-red-100 text-red-800' :
+                            'bg-blue-100 text-blue-800'
+                          }`}>
+                            {employee.status}
+                          </span>
+                        </div>
+                      ) : employee.availability?.next_available_date ? (
                         <div>
                           <div className="text-sm text-gray-900">
                             {new Date(employee.availability.next_available_date).toLocaleDateString()}
@@ -491,11 +686,6 @@ const AllocationReport = () => {
                         </div>
                       ) : (
                         <span className="text-sm text-gray-400">N/A</span>
-                      )}
-                      {employee.upcoming_allocations && employee.upcoming_allocations.length > 0 && (
-                        <div className="text-xs text-gray-500 mt-1">
-                          {employee.upcoming_allocations.length} upcoming
-                        </div>
                       )}
                     </div>
                   </td>

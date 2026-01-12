@@ -100,10 +100,11 @@ class SQLDatabaseTool:
             )
             session.add(allocation)
             
-            # Update employee status to ALLOCATED
+            # Sync employee status based on actual allocations
             employee = session.query(Employee).filter(Employee.id == emp_id).first()
             if employee:
-                employee.status = EmployeeStatus.ALLOCATED
+                from utils.employee_status import sync_employee_status
+                sync_employee_status(employee, session)
             
             session.commit()
             # Refresh to ensure ID and relationships are accessible after commit
